@@ -1,9 +1,9 @@
 /**
- * 근로장학생 근무관리 V0.3.1
+ * 근로장학생 근무관리 V0.3.2
  * Google Sheet 원본을 보존하면서 TERM_ID로 학기 데이터를 분리한다.
  * 기존 배포본의 모든 action 계약을 유지한다.
  */
-const APP_VERSION_ = "V0.3.1";
+const APP_VERSION_ = "V0.3.2";
 const INITIAL_TERM_ID_ = "2026-2";
 const INITIAL_TERM_NAME_ = "2026-2학기";
 
@@ -11,7 +11,7 @@ const SHEETS = {
   STUDENTS:"학생DB", SCHEDULES:"고정근무표", ABSENCES:"출근불가", SUBS:"대타신청",
   EXTRA:"추가근무", EXTRA_JOINS:"추가근무신청", NOTICES:"공지사항",
   PUBLIC_NOTICES:"첫화면공지", HOLIDAYS:"휴일", EVENTS:"운영이벤트", BUDGETS:"예산",
-  SETTINGS:"설정", TERMS:"학기", TERM_SETTINGS:"학기설정"
+  SHARED_MEMOS:"근무공유메모", SETTINGS:"설정", TERMS:"학기", TERM_SETTINGS:"학기설정"
 };
 
 const HEADERS = {};
@@ -26,11 +26,12 @@ HEADERS[SHEETS.PUBLIC_NOTICES] = ["PUBLIC_NOTICE_ID","DATE","TITLE","CONTENT","L
 HEADERS[SHEETS.HOLIDAYS] = ["HOLIDAY_ID","DATE","NAME","ACTIVE","SOURCE","TERM_ID"];
 HEADERS[SHEETS.EVENTS] = ["EVENT_ID","DATE","TITLE","MESSAGE","LEVEL","SHOW_PUBLIC","ACTIVE","CREATED_AT","TERM_ID"];
 HEADERS[SHEETS.BUDGETS] = ["WORK_TYPE","TOTAL_BUDGET","NOTE","TERM_ID"];
+HEADERS[SHEETS.SHARED_MEMOS] = ["MEMO_ID","AUTHOR_ID","AUTHOR_ROLE","AUTHOR_NAME","CONTENT","CREATED_AT","STATUS","TERM_ID"];
 HEADERS[SHEETS.SETTINGS] = ["KEY","VALUE"];
 HEADERS[SHEETS.TERMS] = ["TERM_ID","YEAR","TERM_TYPE","TERM_NAME","START_DATE","END_DATE","STATUS","CREATED_AT"];
 HEADERS[SHEETS.TERM_SETTINGS] = ["TERM_ID","KEY","VALUE"];
 
-const TERM_DATA_SHEETS_ = [SHEETS.STUDENTS,SHEETS.SCHEDULES,SHEETS.ABSENCES,SHEETS.SUBS,SHEETS.EXTRA,SHEETS.EXTRA_JOINS,SHEETS.NOTICES,SHEETS.PUBLIC_NOTICES,SHEETS.HOLIDAYS,SHEETS.EVENTS,SHEETS.BUDGETS];
+const TERM_DATA_SHEETS_ = [SHEETS.STUDENTS,SHEETS.SCHEDULES,SHEETS.ABSENCES,SHEETS.SUBS,SHEETS.EXTRA,SHEETS.EXTRA_JOINS,SHEETS.NOTICES,SHEETS.PUBLIC_NOTICES,SHEETS.HOLIDAYS,SHEETS.EVENTS,SHEETS.BUDGETS,SHEETS.SHARED_MEMOS];
 const STUDENT_COLORS = ["#D9EAF7","#FCE2C4","#DDF1E0","#F7DCE8","#E5E0F7","#FFF0B8","#D8F0EE","#E8E2D4","#DDE5FF","#F5D8D0"];
 const TERM_SETTING_KEYS_ = [
   "SYSTEM_NAME","TERM_NAME","SEMESTER_START","CLASS_END","MAKEUP_DATE","SEMESTER_END","BREAK_START","BREAK_END",
@@ -48,7 +49,7 @@ function setupSystem(){
     appendObject_(SHEETS.BUDGETS,{WORK_TYPE:"국가",TOTAL_BUDGET:"0",NOTE:"미확정이면 0 사용 가능",TERM_ID:activeTermId_()});
     appendObject_(SHEETS.BUDGETS,{WORK_TYPE:"교내",TOTAL_BUDGET:"0",NOTE:"미확정이면 0 사용 가능",TERM_ID:activeTermId_()});
   }
-  SpreadsheetApp.getActive().toast("V0.3.0 학기 분리 구성이 완료됐습니다.");
+  SpreadsheetApp.getActive().toast("V0.3.2 구성이 완료됐습니다.");
 }
 
 /** 기존 행은 삭제/이동하지 않고 TERM_ID만 빈 셀에 채우는 멱등 마이그레이션. */
@@ -85,6 +86,7 @@ function route_(action,p){
   switch(action){
     case "studentLogin":return studentLogin_(p);case "adminLogin":return adminLogin_(p);
     case "getPublicHome":return getPublicHome_();case "getStudentDashboard":return getStudentDashboard_(p);case "getAdminDashboard":return getAdminDashboard_(p);
+    case "getSharedMemos":return getSharedMemos_(p);case "createSharedMemo":return createSharedMemo_(p);case "deleteSharedMemo":return deleteSharedMemo_(p);
     case "createTerm":return createTerm_(p);case "activateTerm":return activateTerm_(p);
     case "createAbsence":return createAbsence_(p);case "createAdminAbsence":return createAdminAbsence_(p);case "cancelAbsence":return cancelAbsence_(p);case "deleteAbsence":return deleteAbsence_(p);
     case "applySubstitute":return applySubstitute_(p);case "approveSubstitute":return approveSubstitute_(p);case "rejectSubstitute":return rejectSubstitute_(p);case "deleteSubstitute":return deleteSubstitute_(p);
@@ -114,11 +116,33 @@ function getPublicHome_(){
 }
 function getAdminDashboard_(p){
   authAdmin_(p.pin);const activeId=activeTermId_(),termId=validTermId_(p.termId||activeId);
-  return{ok:true,students:rowsForTerm_(SHEETS.STUDENTS,termId),schedules:rowsForTerm_(SHEETS.SCHEDULES,termId),absences:rowsForTerm_(SHEETS.ABSENCES,termId),substitutes:rowsForTerm_(SHEETS.SUBS,termId),extraShifts:rowsForTerm_(SHEETS.EXTRA,termId),extraJoins:rowsForTerm_(SHEETS.EXTRA_JOINS,termId),notices:rowsForTerm_(SHEETS.NOTICES,termId),publicNotices:rowsForTerm_(SHEETS.PUBLIC_NOTICES,termId),holidays:rowsForTerm_(SHEETS.HOLIDAYS,termId),events:rowsForTerm_(SHEETS.EVENTS,termId),budgets:rowsForTerm_(SHEETS.BUDGETS,termId),settings:settingsObject_(termId),terms:termRows_().map(publicTerm_),activeTermId:activeId,selectedTermId:termId,readOnly:termId!==activeId,backendVersion:APP_VERSION_};
+  const memos=sharedMemoPage_(termId,0,5);return{ok:true,students:rowsForTerm_(SHEETS.STUDENTS,termId),schedules:rowsForTerm_(SHEETS.SCHEDULES,termId),absences:rowsForTerm_(SHEETS.ABSENCES,termId),substitutes:rowsForTerm_(SHEETS.SUBS,termId),extraShifts:rowsForTerm_(SHEETS.EXTRA,termId),extraJoins:rowsForTerm_(SHEETS.EXTRA_JOINS,termId),notices:rowsForTerm_(SHEETS.NOTICES,termId),publicNotices:rowsForTerm_(SHEETS.PUBLIC_NOTICES,termId),holidays:rowsForTerm_(SHEETS.HOLIDAYS,termId),events:rowsForTerm_(SHEETS.EVENTS,termId),budgets:rowsForTerm_(SHEETS.BUDGETS,termId),sharedMemos:memos.sharedMemos,sharedMemoHasMore:memos.sharedMemoHasMore,features:{sharedMemos:true},settings:settingsObject_(termId),terms:termRows_().map(publicTerm_),activeTermId:activeId,selectedTermId:termId,readOnly:termId!==activeId,backendVersion:APP_VERSION_};
 }
 function getStudentDashboard_(p){
   const s=authStudent_(p.studentId,p.loginPin||p.last4),termId=activeTermId_();
-  return{ok:true,student:s,schedules:rowsForTerm_(SHEETS.SCHEDULES,termId).filter(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.ACTIVE==="Y"),absences:rowsForTerm_(SHEETS.ABSENCES,termId),substitutes:rowsForTerm_(SHEETS.SUBS,termId),extraShifts:rowsForTerm_(SHEETS.EXTRA,termId),extraJoins:rowsForTerm_(SHEETS.EXTRA_JOINS,termId),notices:rowsForTerm_(SHEETS.NOTICES,termId),holidays:rowsForTerm_(SHEETS.HOLIDAYS,termId),events:rowsForTerm_(SHEETS.EVENTS,termId),settings:settingsObject_(termId),terms:termRows_().map(publicTerm_),activeTermId:termId};
+  const memos=sharedMemoPage_(termId,0,5);return{ok:true,student:s,schedules:rowsForTerm_(SHEETS.SCHEDULES,termId).filter(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.ACTIVE==="Y"),absences:rowsForTerm_(SHEETS.ABSENCES,termId),substitutes:rowsForTerm_(SHEETS.SUBS,termId),extraShifts:rowsForTerm_(SHEETS.EXTRA,termId),extraJoins:rowsForTerm_(SHEETS.EXTRA_JOINS,termId),notices:rowsForTerm_(SHEETS.NOTICES,termId),holidays:rowsForTerm_(SHEETS.HOLIDAYS,termId),events:rowsForTerm_(SHEETS.EVENTS,termId),sharedMemos:memos.sharedMemos,sharedMemoHasMore:memos.sharedMemoHasMore,features:{sharedMemos:true},settings:settingsObject_(termId),terms:termRows_().map(publicTerm_),activeTermId:termId};
+}
+
+// ---------- SHARED WORK MEMOS ----------
+function sharedMemoPage_(termId,offset,limit){
+  const start=Math.max(0,Math.floor(Number(offset)||0)),size=Math.min(20,Math.max(1,Math.floor(Number(limit)||5)));
+  const all=rowsForTerm_(SHEETS.SHARED_MEMOS,termId).filter(x=>x.STATUS!=="삭제").sort((a,b)=>String(b.CREATED_AT).localeCompare(String(a.CREATED_AT))||String(b.MEMO_ID).localeCompare(String(a.MEMO_ID)));
+  return{sharedMemos:all.slice(start,start+size),sharedMemoHasMore:all.length>start+size};
+}
+function getSharedMemos_(p){
+  let termId;if(p.role==="admin"){authAdmin_(p.pin);termId=validTermId_(p.termId||activeTermId_());}else{authStudent_(p.studentId,p.loginPin||p.last4);termId=activeTermId_();}
+  return Object.assign({ok:true},sharedMemoPage_(termId,p.offset,p.limit));
+}
+function createSharedMemo_(p){
+  const content=String(p.content||"").trim();if(!content)throw new Error("공유 메모 내용을 입력해줘.");if(content.length>500)throw new Error("공유 메모는 500자까지 입력할 수 있어.");
+  let termId,authorId,authorRole,authorName;if(p.role==="admin"){termId=writeTermId_(p);authorId="ADMIN";authorRole="ADMIN";authorName="관리자";}else{const s=authStudent_(p.studentId,p.loginPin||p.last4);termId=activeTermId_();assertActiveTerm_(termId);authorId=s.STUDENT_KEY;authorRole="STUDENT";authorName=s.NAME;}
+  const memo={MEMO_ID:id_("M"),AUTHOR_ID:authorId,AUTHOR_ROLE:authorRole,AUTHOR_NAME:authorName,CONTENT:sheetLiteral_(content),CREATED_AT:memoNow_(),STATUS:"게시",TERM_ID:termId};appendObject_(SHEETS.SHARED_MEMOS,memo);return{ok:true,memo:Object.assign({},memo,{CONTENT:content})};
+}
+function deleteSharedMemo_(p){
+  let termId,student=null;if(p.role==="admin")termId=writeTermId_(p);else{student=authStudent_(p.studentId,p.loginPin||p.last4);termId=activeTermId_();assertActiveTerm_(termId);}
+  const f=findRow_(SHEETS.SHARED_MEMOS,x=>x.MEMO_ID===p.memoId&&x.TERM_ID===termId&&x.STATUS!=="삭제");if(!f)throw new Error("공유 메모를 찾을 수 없어.");
+  if(student&&(f.row.AUTHOR_ROLE!=="STUDENT"||f.row.AUTHOR_ID!==student.STUDENT_KEY))throw new Error("본인이 작성한 공유 메모만 삭제할 수 있어.");
+  setCellByHeader_(f.sh,f.rowNumber,f.headers,"STATUS","삭제");return{ok:true};
 }
 
 function createTerm_(p){
@@ -265,5 +289,7 @@ function updateWhere_(name,predicate,header,value){const sh=getSheet_(name),d=ta
 function setting_(key){const row=rows_(SHEETS.SETTINGS).find(x=>x.KEY===key);return row?row.VALUE:"";}
 function upsertSetting_(key,value){const f=findRow_(SHEETS.SETTINGS,x=>x.KEY===key);if(!f)appendObject_(SHEETS.SETTINGS,{KEY:key,VALUE:value});else setCellByHeader_(f.sh,f.rowNumber,f.headers,"VALUE",value);}
 function nextStudentColor_(students,currentKey){const used={};(students||[]).forEach(s=>{if(s.STUDENT_KEY!==currentKey&&s.ACTIVE!=="N"&&s.STUDENT_COLOR)used[String(s.STUDENT_COLOR).toUpperCase()]=true;});return STUDENT_COLORS.find(c=>!used[c.toUpperCase()])||STUDENT_COLORS[(students||[]).length%STUDENT_COLORS.length];}
+function sheetLiteral_(value){const text=String(value||"");return/^[=+\-@]/.test(text)?"'"+text:text;}
+function memoNow_(){return Utilities.formatDate(new Date(),Session.getScriptTimeZone()||"Asia/Seoul","yyyy-MM-dd HH:mm:ss.SSS");}
 function id_(prefix){return prefix+"_"+Utilities.getUuid().slice(0,8);}function now_(){return Utilities.formatDate(new Date(),Session.getScriptTimeZone()||"Asia/Seoul","yyyy-MM-dd HH:mm:ss");}function isoToday_(){return Utilities.formatDate(new Date(),Session.getScriptTimeZone()||"Asia/Seoul","yyyy-MM-dd");}
 function clearPublicCache_(){try{CacheService.getScriptCache().remove("PUBLIC_HOME_V030");CacheService.getScriptCache().remove("PUBLIC_HOME_V027");}catch(e){}}

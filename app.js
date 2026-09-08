@@ -1,6 +1,6 @@
 (() => {
   const CONFIG = window.WORK_CONFIG || {};
-  const APP_VERSION = CONFIG.APP_VERSION || "V0.3.1";
+  const APP_VERSION = CONFIG.APP_VERSION || "V0.3.2";
   const DAYS = ["월","화","수","목","금"];
   const ALL_DAYS = ["일","월","화","수","목","금","토"];
   const state = { mode:null, auth:null, student:null, adminData:null, studentData:null, publicHome:null, view:null, selectedTermId:null };
@@ -19,6 +19,7 @@
   function isoDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
   function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
   function fmtDate(v){const d=parseDate(v);return d?`${d.getMonth()+1}/${d.getDate()} (${ALL_DAYS[d.getDay()]})`:v||"";}
+  function fmtDateTime(v){const m=String(v||"").match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);return m?`${m[1]}.${m[2]}.${m[3]} ${m[4]}:${m[5]}`:String(v||"");}
   function fmtMonth(d){return `${d.getFullYear()}년 ${d.getMonth()+1}월`;}
   function timeMin(t){const [h,m]=String(t||"00:00").split(":").map(Number);return h*60+(m||0);}
   function minTime(a,b){return timeMin(a)<=timeMin(b)?a:b;}
@@ -131,7 +132,7 @@
     ];
     const terms=[{TERM_ID:"2026-2",YEAR:"2026",TERM_TYPE:"2",TERM_NAME:"2026-2학기",START_DATE:"2026-09-01",END_DATE:"2027-02-28",STATUS:"ACTIVE",CREATED_AT:new Date().toISOString()}];
     holidays.forEach(x=>x.TERM_ID="2026-2");events.forEach(x=>x.TERM_ID="2026-2");publicNotices.forEach(x=>x.TERM_ID="2026-2");
-    const db={settings,terms,termSettings:{"2026-2":{...settings}},students,schedules,holidays,events,publicNotices,budgets:[{WORK_TYPE:"국가",TOTAL_BUDGET:"6006240",NOTE:"기존 파일 2학기 배정액",TERM_ID:"2026-2"},{WORK_TYPE:"교내",TOTAL_BUDGET:"8173440",NOTE:"기존 파일 2학기 배정액",TERM_ID:"2026-2"}],absences:[],substitutes:[],extraShifts:[],extraJoins:[],notices:[{NOTICE_ID:"N1",DATE:"2026-09-01",TITLE:"오늘의 안내",CONTENT:"우편물 확인 → 홍보물 정리 → 공용 스프레드시트 업데이트 → 자료실 정리 → 행사 준비물 점검",LINK:"",ACTIVE:"Y",CREATED_AT:new Date().toISOString(),TERM_ID:"2026-2"}]};
+    const db={settings,terms,termSettings:{"2026-2":{...settings}},students,schedules,holidays,events,publicNotices,budgets:[{WORK_TYPE:"국가",TOTAL_BUDGET:"6006240",NOTE:"기존 파일 2학기 배정액",TERM_ID:"2026-2"},{WORK_TYPE:"교내",TOTAL_BUDGET:"8173440",NOTE:"기존 파일 2학기 배정액",TERM_ID:"2026-2"}],absences:[],substitutes:[],extraShifts:[],extraJoins:[],notices:[{NOTICE_ID:"N1",DATE:"2026-09-01",TITLE:"오늘의 안내",CONTENT:"우편물 확인 → 홍보물 정리 → 공용 스프레드시트 업데이트 → 자료실 정리 → 행사 준비물 점검",LINK:"",ACTIVE:"Y",CREATED_AT:new Date().toISOString(),TERM_ID:"2026-2"}],sharedMemos:[]};
     // 상태가 눈에 보이도록 1건만 데모 예외 생성. 실제 원본 데이터가 아니라 데모 표시용.
     db.absences.push({ABSENCE_ID:"A_DEMO",CREATED_AT:new Date().toISOString(),STUDENT_KEY:"K05",STUDENT_ID:"",NAME:"박지선",DATE:"2026-09-04",START:"09:00",END:"12:00",REASON:"개인 일정",NOTE:"V0.2 기능 확인용 데모 데이터",STATUS:"대타모집",SUBSTITUTE_KEY:"",SUBSTITUTE_ID:"",SUBSTITUTE_NAME:"",TERM_ID:"2026-2"});
     localStorage.setItem(key,JSON.stringify(db));
@@ -143,7 +144,8 @@
     db.settings={...(db.settings||{}),ACTIVE_TERM_ID:id};
     db.terms=db.terms?.length?db.terms:[{TERM_ID:id,YEAR:"2026",TERM_TYPE:"2",TERM_NAME:db.settings.TERM_NAME||"2026-2학기",START_DATE:db.settings.SEMESTER_START||"2026-09-01",END_DATE:db.settings.BREAK_END||db.settings.SEMESTER_END||"2027-02-28",STATUS:"ACTIVE",CREATED_AT:new Date().toISOString()}];
     db.termSettings=db.termSettings||{[id]:{...db.settings}};
-    ["students","schedules","holidays","events","publicNotices","budgets","absences","substitutes","extraShifts","extraJoins","notices"].forEach(k=>(db[k]||[]).forEach(x=>{if(!x.TERM_ID)x.TERM_ID=id;}));
+    db.sharedMemos=db.sharedMemos||[];
+    ["students","schedules","holidays","events","publicNotices","budgets","absences","substitutes","extraShifts","extraJoins","notices","sharedMemos"].forEach(k=>(db[k]||[]).forEach(x=>{if(!x.TERM_ID)x.TERM_ID=id;}));
     return db;
   }
   function mockActiveTermId(db){return db.settings.ACTIVE_TERM_ID||db.terms.find(x=>x.STATUS==="ACTIVE")?.TERM_ID;}
@@ -157,10 +159,11 @@
     if(!s) throw new Error("학번 또는 로그인 PIN을 확인해줘. (데모는 이름 미리보기를 사용하면 돼.)");return s;
   }
   function mockAdmin(db,p){if(String(p.pin)!==String(db.settings.ADMIN_PIN))throw new Error("관리자 PIN이 맞지 않아.");}
-  function mockDashboard(db,requestedTermId){const activeTermId=mockActiveTermId(db),termId=requestedTermId||activeTermId;return {students:mockRows(db,"students",termId),schedules:mockRows(db,"schedules",termId),holidays:mockRows(db,"holidays",termId),events:mockRows(db,"events",termId),publicNotices:mockRows(db,"publicNotices",termId),budgets:mockRows(db,"budgets",termId),settings:mockSettings(db,termId),absences:mockRows(db,"absences",termId),substitutes:mockRows(db,"substitutes",termId),extraShifts:mockRows(db,"extraShifts",termId),extraJoins:mockRows(db,"extraJoins",termId),notices:mockRows(db,"notices",termId),terms:db.terms,activeTermId,selectedTermId:termId,readOnly:termId!==activeTermId,backendVersion:"V0.3.0"};}
+  function mockMemoPage(db,termId,offset=0,limit=5){const all=mockRows(db,"sharedMemos",termId).filter(x=>x.STATUS!=="삭제").sort((a,b)=>String(b.CREATED_AT).localeCompare(String(a.CREATED_AT))||String(b.MEMO_ID).localeCompare(String(a.MEMO_ID))),start=Math.max(0,Number(offset)||0),size=Math.min(20,Math.max(1,Number(limit)||5));return{sharedMemos:all.slice(start,start+size),sharedMemoHasMore:all.length>start+size};}
+  function mockDashboard(db,requestedTermId){const activeTermId=mockActiveTermId(db),termId=requestedTermId||activeTermId,memos=mockMemoPage(db,termId);return {students:mockRows(db,"students",termId),schedules:mockRows(db,"schedules",termId),holidays:mockRows(db,"holidays",termId),events:mockRows(db,"events",termId),publicNotices:mockRows(db,"publicNotices",termId),budgets:mockRows(db,"budgets",termId),settings:mockSettings(db,termId),absences:mockRows(db,"absences",termId),substitutes:mockRows(db,"substitutes",termId),extraShifts:mockRows(db,"extraShifts",termId),extraJoins:mockRows(db,"extraJoins",termId),notices:mockRows(db,"notices",termId),sharedMemos:memos.sharedMemos,sharedMemoHasMore:memos.sharedMemoHasMore,features:{sharedMemos:true},terms:db.terms,activeTermId,selectedTermId:termId,readOnly:termId!==activeTermId,backendVersion:"V0.3.2"};}
   async function mockApi(action,p){
     await new Promise(r=>setTimeout(r,60));const db=readMock();
-    if(action==="getPublicHome"){const termId=mockActiveTermId(db),s=mockSettings(db,termId);return {ok:true,version:"V0.3.0",activeTermId:termId,terms:db.terms.map(x=>({...x})),settings:{
+    if(action==="getPublicHome"){const termId=mockActiveTermId(db),s=mockSettings(db,termId);return {ok:true,version:"V0.3.2",activeTermId:termId,terms:db.terms.map(x=>({...x})),settings:{
       SYSTEM_NAME:s.SYSTEM_NAME,TERM_NAME:s.TERM_NAME,
       LANDING_TITLE:s.LANDING_TITLE,LANDING_DESCRIPTION:s.LANDING_DESCRIPTION,
       HANDOVER_PDF_LABEL:s.HANDOVER_PDF_LABEL,HANDOVER_PDF_URL:s.HANDOVER_PDF_URL
@@ -180,8 +183,17 @@
     if(action==="getDemoStudents") return {ok:true,students:mockRows(db,"students").filter(x=>x.ACTIVE==="Y").map(x=>({STUDENT_KEY:x.STUDENT_KEY,NAME:x.NAME}))};
     if(action==="studentLogin"){const s=mockAuthStudent(db,p);return {ok:true,student:s};}
     if(action==="adminLogin"){mockAdmin(db,p);return {ok:true};}
-    if(action==="getStudentDashboard"){const s=mockAuthStudent(db,p),termId=mockActiveTermId(db);return {ok:true,student:s,schedules:mockRows(db,"schedules",termId).filter(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.ACTIVE==="Y"),holidays:mockRows(db,"holidays",termId),events:mockRows(db,"events",termId),settings:mockSettings(db,termId),absences:mockRows(db,"absences",termId),substitutes:mockRows(db,"substitutes",termId),extraShifts:mockRows(db,"extraShifts",termId),extraJoins:mockRows(db,"extraJoins",termId),notices:mockRows(db,"notices",termId),terms:db.terms,activeTermId:termId};}
+    if(action==="getStudentDashboard"){const s=mockAuthStudent(db,p),termId=mockActiveTermId(db),memos=mockMemoPage(db,termId);return {ok:true,student:s,schedules:mockRows(db,"schedules",termId).filter(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.ACTIVE==="Y"),holidays:mockRows(db,"holidays",termId),events:mockRows(db,"events",termId),settings:mockSettings(db,termId),absences:mockRows(db,"absences",termId),substitutes:mockRows(db,"substitutes",termId),extraShifts:mockRows(db,"extraShifts",termId),extraJoins:mockRows(db,"extraJoins",termId),notices:mockRows(db,"notices",termId),sharedMemos:memos.sharedMemos,sharedMemoHasMore:memos.sharedMemoHasMore,features:{sharedMemos:true},terms:db.terms,activeTermId:termId};}
     if(action==="getAdminDashboard"){mockAdmin(db,p);return {ok:true,...mockDashboard(db,p.termId)};}
+    if(action==="getSharedMemos"){
+      let termId;if(p.role==="admin"){mockAdmin(db,p);termId=p.termId||mockActiveTermId(db);}else{mockAuthStudent(db,p);termId=mockActiveTermId(db);}return{ok:true,...mockMemoPage(db,termId,p.offset,p.limit)};
+    }
+    if(action==="createSharedMemo"){
+      const content=String(p.content||"").trim();if(!content)throw new Error("공유 메모 내용을 입력해줘.");if(content.length>500)throw new Error("공유 메모는 500자까지 입력할 수 있어.");let termId,authorId,authorRole,authorName;if(p.role==="admin"){mockAdmin(db,p);termId=p.termId||mockActiveTermId(db);if(termId!==mockActiveTermId(db))throw new Error("과거 학기는 읽기 전용이야.");authorId="ADMIN";authorRole="ADMIN";authorName="관리자";}else{const s=mockAuthStudent(db,p);termId=mockActiveTermId(db);authorId=s.STUDENT_KEY;authorRole="STUDENT";authorName=s.NAME;}const memo={MEMO_ID:uid("M"),AUTHOR_ID:authorId,AUTHOR_ROLE:authorRole,AUTHOR_NAME:authorName,CONTENT:content,CREATED_AT:new Date().toISOString(),STATUS:"게시",TERM_ID:termId};db.sharedMemos.push(memo);writeMock(db);return{ok:true,memo};
+    }
+    if(action==="deleteSharedMemo"){
+      let termId,student=null;if(p.role==="admin"){mockAdmin(db,p);termId=p.termId||mockActiveTermId(db);if(termId!==mockActiveTermId(db))throw new Error("과거 학기는 읽기 전용이야.");}else{student=mockAuthStudent(db,p);termId=mockActiveTermId(db);}const memo=db.sharedMemos.find(x=>x.MEMO_ID===p.memoId&&x.TERM_ID===termId&&x.STATUS!=="삭제");if(!memo)throw new Error("공유 메모를 찾을 수 없어.");if(student&&(memo.AUTHOR_ROLE!=="STUDENT"||memo.AUTHOR_ID!==student.STUDENT_KEY))throw new Error("본인이 작성한 공유 메모만 삭제할 수 있어.");memo.STATUS="삭제";writeMock(db);return{ok:true};
+    }
     if(action==="createAdminAbsence"){
       mockAdmin(db,p);const termId=p.termId||mockActiveTermId(db);if(termId!==mockActiveTermId(db))throw new Error("과거 학기는 읽기 전용이야.");const s=mockRows(db,"students",termId).find(x=>x.STUDENT_KEY===p.studentKey&&x.ACTIVE==="Y"),d=mockDashboard(db,termId);if(!s)throw new Error("학생을 찾을 수 없어.");if(!p.date||timeMin(p.start)>=timeMin(p.end)||!mockRows(db,"schedules",termId).some(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.ACTIVE==="Y"&&x.PERIOD_TYPE===periodType(d,p.date)&&x.DAY===ALL_DAYS[parseDate(p.date)?.getDay()]&&overlap(x.START,x.END,p.start,p.end)))throw new Error("학생의 고정근무와 겹치는 시간만 등록할 수 있어.");if(mockRows(db,"absences",termId).some(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.DATE===p.date&&!['취소','삭제'].includes(x.STATUS)&&overlap(x.START,x.END,p.start,p.end)))throw new Error("이미 겹치는 결근 기록이 있어.");db.absences.push({ABSENCE_ID:uid("A"),CREATED_AT:new Date().toISOString(),STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,DATE:p.date,START:p.start,END:p.end,REASON:p.reason||"관리자 등록",NOTE:p.note||"",STATUS:"대타모집",SUBSTITUTE_KEY:"",SUBSTITUTE_ID:"",SUBSTITUTE_NAME:"",TERM_ID:termId});writeMock(db);return {ok:true};
     }
@@ -493,13 +505,30 @@
     if(!adminReadOnly())return;
     const root=$("#page-content"),term=selectedTermName(state.adminData);
     root.insertAdjacentHTML("afterbegin",`<div class="readonly-banner"><strong>${esc(term)} 비활성 학기 조회</strong><span>기록 보호를 위해 읽기 전용입니다. 수정하려면 먼저 이 학기를 현재 운영 학기로 활성화하세요.</span></div>`);
-    $$('input,select,textarea,.del-schedule,.approve-sub,.reject-sub,.delete-sub,.delete-absence,.del-shift,.del-join,.edit-student,.del-student,#new-student,#add-schedule,#new-admin-absence,#new-extra,#edit-budget,#new-public-notice,.del-public-notice,#new-notice,.del-notice,#add-event,.del-event,#add-holiday,.del-holiday',root).forEach(el=>{el.disabled=true;});
+    $$('input,select,textarea,.del-schedule,.approve-sub,.reject-sub,.delete-sub,.delete-absence,.del-shift,.del-join,.edit-student,.del-student,#new-student,#add-schedule,#new-admin-absence,#new-extra,#edit-budget,#new-public-notice,.del-public-notice,#new-notice,.del-notice,#add-event,.del-event,#add-holiday,.del-holiday,.shared-memo-submit,.shared-memo-delete',root).forEach(el=>{el.disabled=true;});
   }
 
   // ---------------- common UI ----------------
   function badge(text,tone="green"){return `<span class="badge ${tone}">${esc(text)}</span>`;}
   function absenceBadge(a){if(a.STATUS==="대타모집")return badge("대타 모집중","red");if(a.STATUS==="대타확정")return badge(`대타 확정 · ${a.SUBSTITUTE_NAME}`,"green");if(a.STATUS==="취소")return badge("취소","amber");return badge(a.STATUS||"-");}
   function noticeList(d,admin=false){const arr=(d.notices||[]).filter(n=>n.ACTIVE==="Y").sort((a,b)=>String(b.DATE).localeCompare(String(a.DATE)));if(!arr.length)return '<div class="empty">등록된 공지가 없어.</div>';return `<div class="mobile-list">${arr.map(n=>`<div class="notice"><h4>${esc(n.TITLE)}</h4><p>${esc(n.CONTENT)} ${n.LINK?`<a href="${esc(n.LINK)}" target="_blank" rel="noopener">바로가기</a>`:""}</p>${admin?`<div class="action-row" style="margin-top:9px"><button class="danger compact del-notice" data-id="${esc(n.NOTICE_ID)}">삭제</button></div>`:""}</div>`).join("")}</div>`;}
+  function sharedMemoCard(d,role){
+    if(!d.features?.sharedMemos)return "";
+    const memos=d.sharedMemos||[],studentKey=d.student?.STUDENT_KEY||"";
+    return `<section class="card shared-memo-card">
+      <div class="shared-memo-head"><div><h3>근무 공유 메모</h3><p>다음 근무자에게 전달할 업무 내용을 남겨줘. 공지와는 별도로 모든 근로학생이 함께 봐.</p></div>${badge("디지털 인수인계","blue")}</div>
+      <form class="shared-memo-form"><textarea name="content" maxlength="500" placeholder="예: OO 서류는 여기까지 정리했습니다. 다음 근무자분 확인 부탁드립니다." aria-label="근무 공유 메모 내용" required></textarea><div class="shared-memo-compose"><small class="shared-memo-count">0 / 500</small><button class="primary shared-memo-submit" type="submit">등록</button></div></form>
+      <div class="shared-memo-list">${memos.map(m=>{const canDelete=role==="admin"||(m.AUTHOR_ROLE==="STUDENT"&&m.AUTHOR_ID===studentKey);return `<article class="shared-memo-item"><p>${esc(m.CONTENT)}</p><div class="shared-memo-meta"><span><strong>${esc(m.AUTHOR_NAME||"-")}</strong>${m.AUTHOR_ROLE==="ADMIN"?` ${badge("관리자","green")}`:""} · ${esc(fmtDateTime(m.CREATED_AT))}</span>${canDelete?`<button class="danger compact shared-memo-delete" type="button" data-id="${esc(m.MEMO_ID)}">삭제</button>`:""}</div></article>`;}).join("")||'<div class="empty">아직 공유 메모가 없어. 첫 인수인계를 남겨줘.</div>'}</div>
+      ${d.sharedMemoHasMore?'<button class="ghost wide shared-memo-more" type="button">이전 메모 더보기</button>':""}
+    </section>`;
+  }
+  function bindSharedMemos(d,role){
+    const form=$(".shared-memo-form"),input=form?.elements.content,count=$(".shared-memo-count");
+    if(input&&count)input.oninput=()=>count.textContent=`${input.value.length} / 500`;
+    if(form)form.onsubmit=async e=>{e.preventDefault();const content=String(input.value||"").trim();if(!content){toast("공유 메모 내용을 입력해줘.");return;}if(content.length>500){toast("공유 메모는 500자까지 입력할 수 있어.");return;}const button=$(".shared-memo-submit",form);button.disabled=true;try{await api("createSharedMemo",{...state.auth,role,content});toast("공유 메모를 등록했어.");navigate(state.view,{force:true});}catch(err){button.disabled=false;toast(err.message);}};
+    $$(".shared-memo-delete").forEach(b=>b.onclick=async()=>{if(!confirm("이 공유 메모를 삭제하시겠습니까?"))return;b.disabled=true;try{await api("deleteSharedMemo",{...state.auth,role,memoId:b.dataset.id});toast("공유 메모를 삭제했어.");navigate(state.view,{force:true});}catch(err){b.disabled=false;toast(err.message);}});
+    const more=$(".shared-memo-more");if(more)more.onclick=async()=>{more.disabled=true;try{const r=await api("getSharedMemos",{...state.auth,role,offset:(d.sharedMemos||[]).length,limit:5});d.sharedMemos=[...(d.sharedMemos||[]),...(r.sharedMemos||[])];d.sharedMemoHasMore=!!r.sharedMemoHasMore;navigate(state.view);}catch(err){more.disabled=false;toast(err.message);}};
+  }
   function currentStudentScheduleEvents(d,key,date){
     const out=[];(d.schedules||[]).filter(s=>s.STUDENT_KEY===key&&s.ACTIVE==="Y").forEach(s=>{const iv=effectiveInterval(d,s,date);if(!iv)return;out.push({type:"fixed",label:`${iv.start}~${iv.end}`,title:"정규근무",s,iv});});
     validAbsences(d,date).filter(a=>a.STUDENT_KEY===key).forEach(a=>out.push({type:"absence",label:`${a.START}~${a.END}`,title:a.STATUS==="대타확정"?`출근불가 · ${a.SUBSTITUTE_NAME} 대타 확정`:"출근불가 · 대타 모집중",a}));
@@ -586,7 +615,7 @@
 
   // ---------------- ADMIN DASHBOARD ----------------
   function statCard(label,n,unit,tone="green",note=""){return `<div class="card stat"><div><div class="label">${esc(label)}</div><div class="number">${esc(n)}<small style="font-size:13px;margin-left:3px">${esc(unit)}</small></div>${note?`<div class="kpi-note">${esc(note)}</div>`:""}</div><div class="stat-icon" style="${tone==="red"?"background:var(--red-soft);color:var(--red)":tone==="amber"?"background:var(--amber-soft);color:var(--amber)":tone==="blue"?"background:var(--blue-soft);color:var(--blue)":""}">●</div></div>`;}
-  function renderAdminDashboard(){const d=state.adminData,open=d.absences.filter(a=>a.STATUS==="대타모집"),apps=d.substitutes.filter(x=>x.STATUS==="신청"),warn=weeklySummary(d).filter(x=>x.maxHours>x.limit);$("#page-content").innerHTML=`<div class="grid cols-4">${statCard("활성 학생",d.students.filter(s=>s.ACTIVE==="Y").length,"명")}${statCard("대타 필요",open.length,"건","red")}${statCard("대타 지원",apps.length,"건","amber")}${statCard("주간시간 초과",warn.length,"명",warn.length?"red":"green")}</div><div class="section-head"><div><h3>이번 주 근무표</h3><p>공휴일과 결근·대타 상태까지 반영된 실제 표시야.</p></div><button class="soft" data-go="admin-schedule">주·월 근무표</button></div>${weekBoard(d,preferredAnchor(d))}<div class="grid cols-2" style="margin-top:20px"><div class="card"><h3>대타가 필요한 일정</h3>${open.length?open.slice(0,5).map(a=>`<div class="list-card" style="margin-top:8px"><strong>${fmtDate(a.DATE)} ${esc(a.START)}~${esc(a.END)}</strong><p>${esc(a.NAME)} · ${esc(a.REASON)}</p></div>`).join(""):'<div class="empty">현재 없음</div>'}</div><div class="card"><h3>운영 상태</h3>${warn.length?`<div class="warning-box"><strong>주간 근로시간 초과 경고</strong>${warn.map(x=>`${esc(x.student.NAME)} ${x.maxHours.toFixed(1)}시간 / ${x.limit}시간`).join("<br>")}</div>`:'<div class="ok-box">현재 등록된 일정 기준으로 주간 최대시간 초과 학생은 없어.</div>'}<div class="source-note" style="margin-top:10px">현재 구간: ${esc(periodType(d,isoDate(new Date()))||"운영기간 외")} · ${esc(workHours(d,isoDate(new Date())).mode)}</div></div></div>`;$$('[data-go]').forEach(b=>b.onclick=()=>navigate(b.dataset.go));}
+  function renderAdminDashboard(){const d=state.adminData,open=d.absences.filter(a=>a.STATUS==="대타모집"),apps=d.substitutes.filter(x=>x.STATUS==="신청"),warn=weeklySummary(d).filter(x=>x.maxHours>x.limit);$("#page-content").innerHTML=`<div class="grid cols-4">${statCard("활성 학생",d.students.filter(s=>s.ACTIVE==="Y").length,"명")}${statCard("대타 필요",open.length,"건","red")}${statCard("대타 지원",apps.length,"건","amber")}${statCard("주간시간 초과",warn.length,"명",warn.length?"red":"green")}</div>${sharedMemoCard(d,"admin")}<div class="section-head"><div><h3>이번 주 근무표</h3><p>공휴일과 결근·대타 상태까지 반영된 실제 표시야.</p></div><button class="soft" data-go="admin-schedule">주·월 근무표</button></div>${weekBoard(d,preferredAnchor(d))}<div class="grid cols-2" style="margin-top:20px"><div class="card"><h3>대타가 필요한 일정</h3>${open.length?open.slice(0,5).map(a=>`<div class="list-card" style="margin-top:8px"><strong>${fmtDate(a.DATE)} ${esc(a.START)}~${esc(a.END)}</strong><p>${esc(a.NAME)} · ${esc(a.REASON)}</p></div>`).join(""):'<div class="empty">현재 없음</div>'}</div><div class="card"><h3>운영 상태</h3>${warn.length?`<div class="warning-box"><strong>주간 근로시간 초과 경고</strong>${warn.map(x=>`${esc(x.student.NAME)} ${x.maxHours.toFixed(1)}시간 / ${x.limit}시간`).join("<br>")}</div>`:'<div class="ok-box">현재 등록된 일정 기준으로 주간 최대시간 초과 학생은 없어.</div>'}<div class="source-note" style="margin-top:10px">현재 구간: ${esc(periodType(d,isoDate(new Date()))||"운영기간 외")} · ${esc(workHours(d,isoDate(new Date())).mode)}</div></div></div>`;bindSharedMemos(d,"admin");$$('[data-go]').forEach(b=>b.onclick=()=>navigate(b.dataset.go));}
 
   // ---------------- ADMIN SCHEDULE ----------------
   function renderAdminSchedule(){const d=state.adminData;ensureAdminPeriodAnchors(d);$("#page-content").innerHTML=`<details class="collapse" open><summary><span>주별 근무표</span><small>${fmtDate(isoDate(mondayOf(ui.adminWeekAnchor)))} 주간</small></summary><div class="collapse-body"><div class="month-toolbar"><div class="group"><button class="ghost compact week-prev">← 이전 주</button><button class="ghost compact week-today">이번 주</button><button class="ghost compact week-next">다음 주 →</button></div><button class="primary add-schedule">근무시간 추가</button></div>${weekBoard(d,ui.adminWeekAnchor)}</div></details><details class="collapse"><summary><span>월별 근무표</span><small>${fmtMonth(ui.adminMonth)}</small></summary><div class="collapse-body"><div class="month-toolbar"><h3>${fmtMonth(ui.adminMonth)}</h3><div class="group"><button class="ghost compact month-prev">←</button><button class="ghost compact month-now">이번 달</button><button class="ghost compact month-next">→</button></div></div>${calendarHTML(d,ui.adminMonth,null)}${studentColorLegend(d)}</div></details><div class="section-head"><div><h3>고정근무 목록</h3><p>학기중/방학중 표를 따로 등록할 수 있어. 단축근무 기간에는 시작시각이 자동으로 보정돼.</p></div><button class="primary add-schedule">근무시간 추가</button></div><div class="table-wrap"><table><thead><tr><th>학생</th><th>구분</th><th>기간</th><th>요일</th><th>시간</th><th>점심예외</th><th></th></tr></thead><tbody>${d.schedules.filter(s=>s.ACTIVE==="Y").map(s=>`<tr><td><strong>${esc(s.NAME)}</strong></td><td>${esc(s.WORK_TYPE)}</td><td>${badge(s.PERIOD_TYPE,s.PERIOD_TYPE==="학기중"?"green":"blue")}</td><td>${esc(s.DAY)}</td><td>${esc(s.START)} ~ ${esc(s.END)}</td><td>${s.LUNCH_ALLOWED==="Y"?badge("허용","amber"):"-"}</td><td><button class="danger compact del-schedule" data-id="${esc(s.SCHEDULE_ID)}">삭제</button></td></tr>`).join("")||'<tr><td colspan="7" class="empty">근무표가 없어.</td></tr>'}</tbody></table></div>`;
@@ -851,6 +880,7 @@
           ${open.length?`<button class="soft" data-go="student-substitute">대타 ${open.length}건 보기</button>`:""}
         </div>
       </div>
+      ${sharedMemoCard(d,"student")}
       ${studentQuickLinks(d)}
       <div class="section-head"><div><h3>내 근무 달력</h3><p>내 일정만 보여. 출근불가·대타 확정도 달력에서 바로 구분돼.</p></div></div>
       <div class="month-toolbar"><h3>${fmtMonth(ui.studentMonth)}</h3><div class="group"><button class="ghost compact stu-prev">←</button><button class="ghost compact stu-now">이번 달</button><button class="ghost compact stu-next">→</button></div></div>
@@ -859,6 +889,7 @@
       ${scheduleListCards(d,s.STUDENT_KEY,21)}`;
     bindStudentCalendarNav(renderStudentHome);
     bindAbsenceButtons();
+    bindSharedMemos(d,"student");
     $$("[data-go]").forEach(b=>b.onclick=()=>navigate(b.dataset.go));
   }
   function renderStudentCalendar(){const d=state.studentData,s=d.student;ensureStudentPeriodAnchor(d);$("#page-content").innerHTML=`<div class="month-toolbar"><h3>${fmtMonth(ui.studentMonth)}</h3><div class="group"><button class="ghost compact stu-prev">←</button><button class="ghost compact stu-now">이번 달</button><button class="ghost compact stu-next">→</button></div></div>${calendarHTML(d,ui.studentMonth,s.STUDENT_KEY)}<div class="section-head"><div><h3>다가오는 근무</h3></div></div>${scheduleListCards(d,s.STUDENT_KEY,42)}`;bindStudentCalendarNav(renderStudentCalendar);bindAbsenceButtons();}

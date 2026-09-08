@@ -79,6 +79,33 @@ function rows(book,name){const data=book.getSheetByName(name).data,headers=data[
 
   assert.equal(c.authStudent_("20260001","1111").NAME,"학생A","copied PIN login must keep working");
   c.upsertStudent_({pin:"1234",termId:"2027-1",studentId:"20270002",name:"학생B",phone:"010-0000-2222",loginPin:"2222",workType:"교내",active:"Y"});
+
+  assert.throws(()=>c.createSharedMemo_({role:"student",studentId:"20260001",loginPin:"1111",content:"   "}),/내용/);
+  assert.throws(()=>c.createSharedMemo_({role:"student",studentId:"20260001",loginPin:"1111",content:"가".repeat(501)}),/500자/);
+  assert.throws(()=>c.createSharedMemo_({role:"student",content:"비로그인 작성"}),/학번과 로그인 PIN/);
+  assert.equal(c.sheetLiteral_("=IMPORTXML(\"https://example.com\")"),"'=IMPORTXML(\"https://example.com\")","spreadsheet formulas must be stored as literal text");
+  const studentMemo=c.createSharedMemo_({role:"student",studentId:"20260001",loginPin:"1111",content:"<script>alert('test')</script> 다음 근무자 확인"}).memo;
+  assert.equal(rows(book,"근무공유메모").find(x=>x.MEMO_ID===studentMemo.MEMO_ID).AUTHOR_ID,"K01");
+  assert.equal(c.getStudentDashboard_({studentId:"20270002",loginPin:"2222"}).sharedMemos[0].CONTENT,"<script>alert('test')</script> 다음 근무자 확인","all students must see the shared memo as plain data");
+  assert.throws(()=>c.deleteSharedMemo_({role:"student",studentId:"20270002",loginPin:"2222",memoId:studentMemo.MEMO_ID}),/본인이 작성한/);
+  assert.throws(()=>c.deleteSharedMemo_({role:"student",memoId:studentMemo.MEMO_ID}),/학번과 로그인 PIN/);
+  c.deleteSharedMemo_({role:"student",studentId:"20260001",loginPin:"1111",memoId:studentMemo.MEMO_ID});
+  assert.equal(rows(book,"근무공유메모").find(x=>x.MEMO_ID===studentMemo.MEMO_ID).STATUS,"삭제","memo deletion must be recoverable");
+
+  const ownMemo=c.createSharedMemo_({role:"student",studentId:"20270002",loginPin:"2222",content:"학생 B 인수인계"}).memo;
+  const adminMemo=c.createSharedMemo_({role:"admin",pin:"1234",termId:"2027-1",content:"관리자 인수인계"}).memo;
+  assert.equal(adminMemo.AUTHOR_ID,"ADMIN");
+  assert.throws(()=>c.deleteSharedMemo_({role:"student",studentId:"20260001",loginPin:"1111",memoId:adminMemo.MEMO_ID}),/본인이 작성한/);
+  c.deleteSharedMemo_({role:"admin",pin:"1234",termId:"2027-1",memoId:ownMemo.MEMO_ID});
+  assert.equal(rows(book,"근무공유메모").find(x=>x.MEMO_ID===ownMemo.MEMO_ID).STATUS,"삭제","admin must be able to delete any memo");
+  assert.throws(()=>c.createSharedMemo_({role:"admin",pin:"1234",termId:"2026-2",content:"과거 학기 쓰기"}),/읽기 전용/);
+
+  for(let i=0;i<6;i++)c.createSharedMemo_({role:"admin",pin:"1234",termId:"2027-1",content:`페이지 메모 ${i}`});
+  const firstMemoPage=c.getSharedMemos_({role:"admin",pin:"1234",termId:"2027-1",offset:0,limit:5});
+  const secondMemoPage=c.getSharedMemos_({role:"admin",pin:"1234",termId:"2027-1",offset:5,limit:5});
+  assert.equal(firstMemoPage.sharedMemos.length,5);assert.equal(firstMemoPage.sharedMemoHasMore,true);assert.equal(secondMemoPage.sharedMemos.length,2);
+  assert.match(fs.readFileSync(path.join(__dirname,"..","app.js"),"utf8"),/\$\{esc\(m\.CONTENT\)\}/,"memo content must be HTML-escaped before rendering");
+
   c.createAbsence_({studentId:"20260001",loginPin:"1111",date:"2027-03-08",start:"09:00",end:"12:00",reason:"수업"});
   const absence=rows(book,"출근불가").find(x=>x.TERM_ID==="2027-1");
   c.createAdminAbsence_({pin:"1234",termId:"2027-1",studentKey:"K01",date:"2027-03-15",start:"09:00",end:"12:00",reason:"학생 요청",note:"관리자 대리 등록"});
