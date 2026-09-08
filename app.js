@@ -1,9 +1,9 @@
 (() => {
   const CONFIG = window.WORK_CONFIG || {};
-  const APP_VERSION = CONFIG.APP_VERSION || "V0.2.7.3";
+  const APP_VERSION = CONFIG.APP_VERSION || "V0.3.0";
   const DAYS = ["월","화","수","목","금"];
   const ALL_DAYS = ["일","월","화","수","목","금","토"];
-  const state = { mode:null, auth:null, student:null, adminData:null, studentData:null, publicHome:null, view:null };
+  const state = { mode:null, auth:null, student:null, adminData:null, studentData:null, publicHome:null, view:null, selectedTermId:null };
   const ui = { adminWeekAnchor:new Date(), adminMonth:new Date(), studentMonth:new Date() };
   const STUDENT_COLORS = [
     "#D9EAF7", "#FCE2C4", "#DDF1E0", "#F7DCE8", "#E5E0F7",
@@ -54,11 +54,24 @@
 
   // ---------------- API ----------------
   async function api(action,params={}){
+    if(state.mode==="admin" && state.selectedTermId && params.termId===undefined) params={...params,termId:state.selectedTermId};
     if(CONFIG.DEMO_MODE) return mockApi(action,params);
     if(!CONFIG.API_URL) throw new Error("config.js에 Apps Script API_URL을 입력해줘.");
     const r=await jsonpRequest(CONFIG.API_URL,{action,...params});
     if(r && r.ok===false) throw new Error(r.error||"처리에 실패했어.");
     return r;
+  }
+
+  function activeTerm(d){return (d?.terms||[]).find(x=>x.TERM_ID===(d.activeTermId||d.settings?.ACTIVE_TERM_ID))||(d?.terms||[]).find(x=>x.STATUS==="ACTIVE")||null;}
+  function selectedTerm(d){return (d?.terms||[]).find(x=>x.TERM_ID===(d.selectedTermId||state.selectedTermId))||activeTerm(d);}
+  function currentTermName(d){return activeTerm(d)?.TERM_NAME||d?.settings?.TERM_NAME||CONFIG.TERM_NAME||"";}
+  function selectedTermName(d){return selectedTerm(d)?.TERM_NAME||currentTermName(d);}
+  function adminReadOnly(){return state.mode==="admin"&&state.view!=="admin-terms"&&!!state.adminData?.readOnly;}
+  function updateTermChrome(d){
+    const active=currentTermName(d),selected=state.mode==="admin"?selectedTermName(d):active;
+    if(active){$("#login-term").textContent=active;$("#sidebar-term").textContent=active;}
+    const header=$("#header-term");
+    if(header){header.textContent=state.mode==="admin"&&selected&&selected!==active?`조회: ${selected} · 운영: ${active}`:(active||"학기 정보 없음");header.classList.toggle("readonly",!!(state.mode==="admin"&&selected&&selected!==active));}
   }
   function jsonpRequest(url,params){
     return new Promise((resolve,reject)=>{
@@ -83,15 +96,16 @@
       {STUDENT_KEY:"K06",STUDENT_ID:"",NAME:"이민규",PHONE:"010-8703-5841",LOGIN_PIN:"5841",WORK_TYPE:"국가",DEPARTMENT:"",ACTIVE:"Y",ADMIN_MEMO:"전화번호는 기존 1학기표에서 연계",STUDENT_COLOR:STUDENT_COLORS[5]},
       {STUDENT_KEY:"K07",STUDENT_ID:"",NAME:"양예주",PHONE:"010-2295-8736",LOGIN_PIN:"8736",WORK_TYPE:"교내",DEPARTMENT:"",ACTIVE:"Y",ADMIN_MEMO:"전화번호는 기존 1학기표에서 연계",STUDENT_COLOR:STUDENT_COLORS[6]}
     ];
+    students.forEach(x=>x.TERM_ID="2026-2");
     const schedules=[
       ["K01","유동채","국가","학기중","월","09:00","12:00"],["K02","김건우","교내","학기중","월","13:00","16:00"],["K03","이현서","교내","학기중","월","15:00","17:00"],
       ["K04","차명진","교내","학기중","화","13:00","17:00"],
       ["K05","박지선","국가","학기중","수","09:00","12:00"],["K01","유동채","국가","학기중","수","09:00","12:00"],["K06","이민규","국가","학기중","수","13:00","15:00"],["K04","차명진","교내","학기중","수","13:00","17:00"],
       ["K02","김건우","교내","학기중","목","09:00","12:00"],["K06","이민규","국가","학기중","목","13:00","17:00"],["K07","양예주","교내","학기중","목","13:00","17:00"],
       ["K05","박지선","국가","학기중","금","09:00","12:00"],["K07","양예주","교내","학기중","금","13:00","16:00"],["K03","이현서","교내","학기중","금","15:00","17:00"]
-    ].map((x,i)=>({SCHEDULE_ID:`S${i+1}`,STUDENT_KEY:x[0],STUDENT_ID:"",NAME:x[1],WORK_TYPE:x[2],PERIOD_TYPE:x[3],DAY:x[4],START:x[5],END:x[6],LUNCH_ALLOWED:"N",ACTIVE:"Y"}));
+    ].map((x,i)=>({SCHEDULE_ID:`S${i+1}`,STUDENT_KEY:x[0],STUDENT_ID:"",NAME:x[1],WORK_TYPE:x[2],PERIOD_TYPE:x[3],DAY:x[4],START:x[5],END:x[6],LUNCH_ALLOWED:"N",ACTIVE:"Y",TERM_ID:"2026-2"}));
     const settings={
-      SYSTEM_NAME:"근로장학생 근무관리",TERM_NAME:"2026-2학기",ADMIN_PIN:"1234",
+      SYSTEM_NAME:"근로장학생 근무관리",TERM_NAME:"2026-2학기",ACTIVE_TERM_ID:"2026-2",ADMIN_PIN:"1234",
       SEMESTER_START:"2026-09-01",CLASS_END:"2026-12-21",MAKEUP_DATE:"2026-12-22",SEMESTER_END:"2026-12-22",
       BREAK_START:"2026-12-23",BREAK_END:"2027-02-28",SHORT_START:"",SHORT_END:"",
       NORMAL_START_TIME:"09:00",NORMAL_END_TIME:"17:00",SHORT_START_TIME:"10:00",SHORT_END_TIME:"17:00",
@@ -115,54 +129,68 @@
     const publicNotices=[
       {PUBLIC_NOTICE_ID:"PN_DEMO1",DATE:"2026-09-01",TITLE:"2학기 근로 시작 안내",CONTENT:"첫 근무 전 본인 시간표와 업무 인수인계서를 확인해줘.",LINK:"",ACTIVE:"Y",CREATED_AT:new Date().toISOString()}
     ];
-    const db={settings,students,schedules,holidays,events,publicNotices,budgets:[{WORK_TYPE:"국가",TOTAL_BUDGET:"6006240",NOTE:"기존 파일 2학기 배정액"},{WORK_TYPE:"교내",TOTAL_BUDGET:"8173440",NOTE:"기존 파일 2학기 배정액"}],absences:[],substitutes:[],extraShifts:[],extraJoins:[],notices:[{NOTICE_ID:"N1",DATE:"2026-09-01",TITLE:"오늘의 안내",CONTENT:"우편물 확인 → 홍보물 정리 → 공용 스프레드시트 업데이트 → 자료실 정리 → 행사 준비물 점검",LINK:"",ACTIVE:"Y",CREATED_AT:new Date().toISOString()}]};
+    const terms=[{TERM_ID:"2026-2",YEAR:"2026",TERM_TYPE:"2",TERM_NAME:"2026-2학기",START_DATE:"2026-09-01",END_DATE:"2027-02-28",STATUS:"ACTIVE",CREATED_AT:new Date().toISOString()}];
+    holidays.forEach(x=>x.TERM_ID="2026-2");events.forEach(x=>x.TERM_ID="2026-2");publicNotices.forEach(x=>x.TERM_ID="2026-2");
+    const db={settings,terms,termSettings:{"2026-2":{...settings}},students,schedules,holidays,events,publicNotices,budgets:[{WORK_TYPE:"국가",TOTAL_BUDGET:"6006240",NOTE:"기존 파일 2학기 배정액",TERM_ID:"2026-2"},{WORK_TYPE:"교내",TOTAL_BUDGET:"8173440",NOTE:"기존 파일 2학기 배정액",TERM_ID:"2026-2"}],absences:[],substitutes:[],extraShifts:[],extraJoins:[],notices:[{NOTICE_ID:"N1",DATE:"2026-09-01",TITLE:"오늘의 안내",CONTENT:"우편물 확인 → 홍보물 정리 → 공용 스프레드시트 업데이트 → 자료실 정리 → 행사 준비물 점검",LINK:"",ACTIVE:"Y",CREATED_AT:new Date().toISOString(),TERM_ID:"2026-2"}]};
     // 상태가 눈에 보이도록 1건만 데모 예외 생성. 실제 원본 데이터가 아니라 데모 표시용.
-    db.absences.push({ABSENCE_ID:"A_DEMO",CREATED_AT:new Date().toISOString(),STUDENT_KEY:"K05",STUDENT_ID:"",NAME:"박지선",DATE:"2026-09-04",START:"09:00",END:"12:00",REASON:"개인 일정",NOTE:"V0.2 기능 확인용 데모 데이터",STATUS:"대타모집",SUBSTITUTE_KEY:"",SUBSTITUTE_ID:"",SUBSTITUTE_NAME:""});
+    db.absences.push({ABSENCE_ID:"A_DEMO",CREATED_AT:new Date().toISOString(),STUDENT_KEY:"K05",STUDENT_ID:"",NAME:"박지선",DATE:"2026-09-04",START:"09:00",END:"12:00",REASON:"개인 일정",NOTE:"V0.2 기능 확인용 데모 데이터",STATUS:"대타모집",SUBSTITUTE_KEY:"",SUBSTITUTE_ID:"",SUBSTITUTE_NAME:"",TERM_ID:"2026-2"});
     localStorage.setItem(key,JSON.stringify(db));
   }
-  function readMock(){seedMock();return JSON.parse(localStorage.getItem("workstudent_demo_db_v022"));}
+  function readMock(){seedMock();const db=JSON.parse(localStorage.getItem("workstudent_demo_db_v022"));return migrateMockTerms(db);}
   function writeMock(db){localStorage.setItem("workstudent_demo_db_v022",JSON.stringify(db));}
+  function migrateMockTerms(db){
+    const id=db.settings?.ACTIVE_TERM_ID||"2026-2";
+    db.settings={...(db.settings||{}),ACTIVE_TERM_ID:id};
+    db.terms=db.terms?.length?db.terms:[{TERM_ID:id,YEAR:"2026",TERM_TYPE:"2",TERM_NAME:db.settings.TERM_NAME||"2026-2학기",START_DATE:db.settings.SEMESTER_START||"2026-09-01",END_DATE:db.settings.BREAK_END||db.settings.SEMESTER_END||"2027-02-28",STATUS:"ACTIVE",CREATED_AT:new Date().toISOString()}];
+    db.termSettings=db.termSettings||{[id]:{...db.settings}};
+    ["students","schedules","holidays","events","publicNotices","budgets","absences","substitutes","extraShifts","extraJoins","notices"].forEach(k=>(db[k]||[]).forEach(x=>{if(!x.TERM_ID)x.TERM_ID=id;}));
+    return db;
+  }
+  function mockActiveTermId(db){return db.settings.ACTIVE_TERM_ID||db.terms.find(x=>x.STATUS==="ACTIVE")?.TERM_ID;}
+  function mockRows(db,key,termId){return (db[key]||[]).filter(x=>x.TERM_ID===(termId||mockActiveTermId(db)));}
+  function mockSettings(db,termId){return {...db.settings,...(db.termSettings?.[termId||mockActiveTermId(db)]||{})};}
   function mockAuthStudent(db,p){
     let s=null;
-    if(p.previewKey) s=db.students.find(x=>x.STUDENT_KEY===p.previewKey&&x.ACTIVE==="Y");
-    else s=db.students.find(x=>x.STUDENT_ID&&x.STUDENT_ID===p.studentId&&String(x.LOGIN_PIN||x.PHONE_LAST4||"")===String(p.loginPin||p.last4||"")&&x.ACTIVE==="Y");
+    const students=mockRows(db,"students",mockActiveTermId(db));
+    if(p.previewKey) s=students.find(x=>x.STUDENT_KEY===p.previewKey&&x.ACTIVE==="Y");
+    else s=students.find(x=>x.STUDENT_ID&&x.STUDENT_ID===p.studentId&&String(x.LOGIN_PIN||x.PHONE_LAST4||"")===String(p.loginPin||p.last4||"")&&x.ACTIVE==="Y");
     if(!s) throw new Error("학번 또는 로그인 PIN을 확인해줘. (데모는 이름 미리보기를 사용하면 돼.)");return s;
   }
   function mockAdmin(db,p){if(String(p.pin)!==String(db.settings.ADMIN_PIN))throw new Error("관리자 PIN이 맞지 않아.");}
-  function mockDashboard(db){return {students:db.students,schedules:db.schedules,holidays:db.holidays,events:db.events||[],publicNotices:db.publicNotices||[],budgets:db.budgets,settings:db.settings,absences:db.absences,substitutes:db.substitutes,extraShifts:db.extraShifts,extraJoins:db.extraJoins,notices:db.notices,backendVersion:"V0.2.7"};}
+  function mockDashboard(db,requestedTermId){const activeTermId=mockActiveTermId(db),termId=requestedTermId||activeTermId;return {students:mockRows(db,"students",termId),schedules:mockRows(db,"schedules",termId),holidays:mockRows(db,"holidays",termId),events:mockRows(db,"events",termId),publicNotices:mockRows(db,"publicNotices",termId),budgets:mockRows(db,"budgets",termId),settings:mockSettings(db,termId),absences:mockRows(db,"absences",termId),substitutes:mockRows(db,"substitutes",termId),extraShifts:mockRows(db,"extraShifts",termId),extraJoins:mockRows(db,"extraJoins",termId),notices:mockRows(db,"notices",termId),terms:db.terms,activeTermId,selectedTermId:termId,readOnly:termId!==activeTermId,backendVersion:"V0.3.0"};}
   async function mockApi(action,p){
     await new Promise(r=>setTimeout(r,60));const db=readMock();
-    if(action==="getPublicHome"){return {ok:true,version:"V0.2.7",settings:{
-      SYSTEM_NAME:db.settings.SYSTEM_NAME,TERM_NAME:db.settings.TERM_NAME,
-      LANDING_TITLE:db.settings.LANDING_TITLE,LANDING_DESCRIPTION:db.settings.LANDING_DESCRIPTION,
-      HANDOVER_PDF_LABEL:db.settings.HANDOVER_PDF_LABEL,HANDOVER_PDF_URL:db.settings.HANDOVER_PDF_URL
-    },notices:(db.publicNotices||[]).filter(x=>x.ACTIVE==="Y")};}
+    if(action==="getPublicHome"){const termId=mockActiveTermId(db),s=mockSettings(db,termId);return {ok:true,version:"V0.3.0",activeTermId:termId,terms:db.terms.map(x=>({...x})),settings:{
+      SYSTEM_NAME:s.SYSTEM_NAME,TERM_NAME:s.TERM_NAME,
+      LANDING_TITLE:s.LANDING_TITLE,LANDING_DESCRIPTION:s.LANDING_DESCRIPTION,
+      HANDOVER_PDF_LABEL:s.HANDOVER_PDF_LABEL,HANDOVER_PDF_URL:s.HANDOVER_PDF_URL
+    },notices:mockRows(db,"publicNotices",termId).filter(x=>x.ACTIVE==="Y")};}
     if(action==="getPublicLanding"){return {ok:true,
-      students:db.students.filter(x=>x.ACTIVE==="Y").map(x=>({STUDENT_KEY:x.STUDENT_KEY,NAME:x.NAME,STUDENT_COLOR:x.STUDENT_COLOR})),
-      schedules:db.schedules.filter(x=>x.ACTIVE==="Y"),
-      holidays:db.holidays.filter(x=>x.ACTIVE==="Y"),
-      events:(db.events||[]).filter(x=>x.ACTIVE==="Y"&&x.SHOW_PUBLIC==="Y"),
-      absences:db.absences.filter(x=>!["취소","삭제"].includes(x.STATUS)).map(x=>({STUDENT_KEY:x.STUDENT_KEY,DATE:x.DATE,START:x.START,END:x.END,STATUS:x.STATUS,SUBSTITUTE_KEY:x.SUBSTITUTE_KEY,SUBSTITUTE_NAME:x.SUBSTITUTE_NAME})),
-      settings:db.settings
+      students:mockRows(db,"students").filter(x=>x.ACTIVE==="Y").map(x=>({STUDENT_KEY:x.STUDENT_KEY,NAME:x.NAME,STUDENT_COLOR:x.STUDENT_COLOR})),
+      schedules:mockRows(db,"schedules").filter(x=>x.ACTIVE==="Y"),
+      holidays:mockRows(db,"holidays").filter(x=>x.ACTIVE==="Y"),
+      events:mockRows(db,"events").filter(x=>x.ACTIVE==="Y"&&x.SHOW_PUBLIC==="Y"),
+      absences:mockRows(db,"absences").filter(x=>!["취소","삭제"].includes(x.STATUS)).map(x=>({STUDENT_KEY:x.STUDENT_KEY,DATE:x.DATE,START:x.START,END:x.END,STATUS:x.STATUS,SUBSTITUTE_KEY:x.SUBSTITUTE_KEY,SUBSTITUTE_NAME:x.SUBSTITUTE_NAME})),
+      settings:mockSettings(db)
     };}
     if(action==="getPublicSettings"){return {ok:true,settings:{
       SYSTEM_NAME:db.settings.SYSTEM_NAME,TERM_NAME:db.settings.TERM_NAME,
       HANDOVER_PDF_LABEL:db.settings.HANDOVER_PDF_LABEL,HANDOVER_PDF_URL:db.settings.HANDOVER_PDF_URL
     }};}
-    if(action==="getDemoStudents") return {ok:true,students:db.students.filter(x=>x.ACTIVE==="Y").map(x=>({STUDENT_KEY:x.STUDENT_KEY,NAME:x.NAME}))};
+    if(action==="getDemoStudents") return {ok:true,students:mockRows(db,"students").filter(x=>x.ACTIVE==="Y").map(x=>({STUDENT_KEY:x.STUDENT_KEY,NAME:x.NAME}))};
     if(action==="studentLogin"){const s=mockAuthStudent(db,p);return {ok:true,student:s};}
     if(action==="adminLogin"){mockAdmin(db,p);return {ok:true};}
-    if(action==="getStudentDashboard"){const s=mockAuthStudent(db,p);return {ok:true,student:s,schedules:db.schedules.filter(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.ACTIVE==="Y"),holidays:db.holidays,events:db.events||[],settings:db.settings,absences:db.absences,substitutes:db.substitutes,extraShifts:db.extraShifts,extraJoins:db.extraJoins,notices:db.notices};}
-    if(action==="getAdminDashboard"){mockAdmin(db,p);return {ok:true,...mockDashboard(db)};}
+    if(action==="getStudentDashboard"){const s=mockAuthStudent(db,p),termId=mockActiveTermId(db);return {ok:true,student:s,schedules:mockRows(db,"schedules",termId).filter(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.ACTIVE==="Y"),holidays:mockRows(db,"holidays",termId),events:mockRows(db,"events",termId),settings:mockSettings(db,termId),absences:mockRows(db,"absences",termId),substitutes:mockRows(db,"substitutes",termId),extraShifts:mockRows(db,"extraShifts",termId),extraJoins:mockRows(db,"extraJoins",termId),notices:mockRows(db,"notices",termId),terms:db.terms,activeTermId:termId};}
+    if(action==="getAdminDashboard"){mockAdmin(db,p);return {ok:true,...mockDashboard(db,p.termId)};}
     if(action==="createAbsence"){
-      const s=mockAuthStudent(db,p);db.absences.push({ABSENCE_ID:uid("A"),CREATED_AT:new Date().toISOString(),STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,DATE:p.date,START:p.start,END:p.end,REASON:p.reason||"개인 일정",NOTE:p.note||"",STATUS:"대타모집",SUBSTITUTE_KEY:"",SUBSTITUTE_ID:"",SUBSTITUTE_NAME:""});writeMock(db);return {ok:true};
+      const s=mockAuthStudent(db,p);db.absences.push({ABSENCE_ID:uid("A"),CREATED_AT:new Date().toISOString(),STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,DATE:p.date,START:p.start,END:p.end,REASON:p.reason||"개인 일정",NOTE:p.note||"",STATUS:"대타모집",SUBSTITUTE_KEY:"",SUBSTITUTE_ID:"",SUBSTITUTE_NAME:"",TERM_ID:mockActiveTermId(db)});writeMock(db);return {ok:true};
     }
     if(action==="cancelAbsence"){const s=mockAuthStudent(db,p),a=db.absences.find(x=>x.ABSENCE_ID===p.absenceId&&x.STUDENT_KEY===s.STUDENT_KEY);if(!a)throw new Error("신청을 찾을 수 없어.");if(a.STATUS==="대타확정")throw new Error("대타 확정 후에는 관리자에게 요청해줘.");a.STATUS="취소";writeMock(db);return {ok:true};}
     if(action==="deleteAbsence"){mockAdmin(db,p);const a=db.absences.find(x=>x.ABSENCE_ID===p.absenceId);if(a)a.STATUS="삭제";db.substitutes.filter(x=>x.ABSENCE_ID===p.absenceId).forEach(x=>x.STATUS="삭제");writeMock(db);return {ok:true};}
     if(action==="applySubstitute"){
       const s=mockAuthStudent(db,p),a=db.absences.find(x=>x.ABSENCE_ID===p.absenceId&&x.STATUS==="대타모집");if(!a)throw new Error("현재 대타 모집 중인 건이 아니야.");if(a.STUDENT_KEY===s.STUDENT_KEY)throw new Error("본인 결근에는 신청할 수 없어.");
       if(db.substitutes.some(x=>x.ABSENCE_ID===a.ABSENCE_ID&&x.STUDENT_KEY===s.STUDENT_KEY&&x.STATUS==="신청"))throw new Error("이미 신청했어.");
-      db.substitutes.push({APP_ID:uid("P"),ABSENCE_ID:a.ABSENCE_ID,STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,APPLIED_AT:new Date().toISOString(),STATUS:"신청",DECIDED_AT:""});writeMock(db);return {ok:true};
+      db.substitutes.push({APP_ID:uid("P"),ABSENCE_ID:a.ABSENCE_ID,STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,APPLIED_AT:new Date().toISOString(),STATUS:"신청",DECIDED_AT:"",TERM_ID:mockActiveTermId(db)});writeMock(db);return {ok:true};
     }
     if(action==="approveSubstitute"){
       mockAdmin(db,p);const app=db.substitutes.find(x=>x.APP_ID===p.appId);if(!app)throw new Error("신청을 찾을 수 없어.");const a=db.absences.find(x=>x.ABSENCE_ID===app.ABSENCE_ID&&x.STATUS==="대타모집");if(!a)throw new Error("이미 처리된 결근이야.");
@@ -170,21 +198,21 @@
     }
     if(action==="rejectSubstitute"||action==="deleteSubstitute"){mockAdmin(db,p);const x=db.substitutes.find(v=>v.APP_ID===p.appId);if(x)x.STATUS=action==="deleteSubstitute"?"삭제":"미선정";writeMock(db);return {ok:true};}
     if(action==="upsertStudent"){
-      mockAdmin(db,p);let s=p.studentKey?db.students.find(x=>x.STUDENT_KEY===p.studentKey):null;const digits=String(p.phone||"").replace(/\D/g,"");const loginPin=String(p.loginPin||"").trim() || s?.LOGIN_PIN || digits.slice(-4);const studentColor=p.studentColor||s?.STUDENT_COLOR||nextStudentColor(db.students,s?.STUDENT_KEY||"");const v={STUDENT_KEY:s?.STUDENT_KEY||uid("K"),STUDENT_ID:p.studentId||"",NAME:p.name,PHONE:p.phone||"",LOGIN_PIN:loginPin,WORK_TYPE:p.workType||"국가",DEPARTMENT:p.department||"",ACTIVE:p.active||"Y",ADMIN_MEMO:p.memo||"",STUDENT_COLOR:studentColor};if(s)Object.assign(s,v);else db.students.push(v);writeMock(db);return {ok:true};
+      mockAdmin(db,p);const termId=p.termId||mockActiveTermId(db);let s=p.studentKey?db.students.find(x=>x.STUDENT_KEY===p.studentKey&&x.TERM_ID===termId):null;const digits=String(p.phone||"").replace(/\D/g,"");const loginPin=String(p.loginPin||"").trim() || s?.LOGIN_PIN || digits.slice(-4);const studentColor=p.studentColor||s?.STUDENT_COLOR||nextStudentColor(mockRows(db,"students",termId),s?.STUDENT_KEY||"");const v={STUDENT_KEY:s?.STUDENT_KEY||uid("K"),STUDENT_ID:p.studentId||"",NAME:p.name,PHONE:p.phone||"",LOGIN_PIN:loginPin,WORK_TYPE:p.workType||"국가",DEPARTMENT:p.department||"",ACTIVE:p.active||"Y",ADMIN_MEMO:p.memo||"",STUDENT_COLOR:studentColor,TERM_ID:termId};if(s)Object.assign(s,v);else db.students.push(v);writeMock(db);return {ok:true};
     }
     if(action==="deleteStudent"){mockAdmin(db,p);const s=db.students.find(x=>x.STUDENT_KEY===p.studentKey);if(s)s.ACTIVE="N";db.schedules.filter(x=>x.STUDENT_KEY===p.studentKey).forEach(x=>x.ACTIVE="N");writeMock(db);return {ok:true};}
     if(action==="addSchedule"){
-      mockAdmin(db,p);const s=db.students.find(x=>x.STUDENT_KEY===p.studentKey&&x.ACTIVE==="Y");if(!s)throw new Error("학생을 찾을 수 없어.");db.schedules.push({SCHEDULE_ID:uid("S"),STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,WORK_TYPE:s.WORK_TYPE,PERIOD_TYPE:p.periodType,DAY:p.day,START:p.start,END:p.end,LUNCH_ALLOWED:p.lunchAllowed||"N",ACTIVE:"Y"});writeMock(db);return {ok:true};
+      mockAdmin(db,p);const termId=p.termId||mockActiveTermId(db),s=db.students.find(x=>x.STUDENT_KEY===p.studentKey&&x.TERM_ID===termId&&x.ACTIVE==="Y");if(!s)throw new Error("학생을 찾을 수 없어.");db.schedules.push({SCHEDULE_ID:uid("S"),STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,WORK_TYPE:s.WORK_TYPE,PERIOD_TYPE:p.periodType,DAY:p.day,START:p.start,END:p.end,LUNCH_ALLOWED:p.lunchAllowed||"N",ACTIVE:"Y",TERM_ID:termId});writeMock(db);return {ok:true};
     }
     if(action==="deleteSchedule"){mockAdmin(db,p);const s=db.schedules.find(x=>x.SCHEDULE_ID===p.scheduleId);if(s)s.ACTIVE="N";writeMock(db);return {ok:true};}
-    if(action==="createExtraShift"){mockAdmin(db,p);db.extraShifts.push({SHIFT_ID:uid("X"),TITLE:p.title,DATE:p.date,START:p.start,END:p.end,CAPACITY:String(p.capacity||1),DESCRIPTION:p.description||"",STATUS:"모집중",CREATED_AT:new Date().toISOString()});writeMock(db);return {ok:true};}
+    if(action==="createExtraShift"){mockAdmin(db,p);db.extraShifts.push({SHIFT_ID:uid("X"),TITLE:p.title,DATE:p.date,START:p.start,END:p.end,CAPACITY:String(p.capacity||1),DESCRIPTION:p.description||"",STATUS:"모집중",CREATED_AT:new Date().toISOString(),TERM_ID:p.termId||mockActiveTermId(db)});writeMock(db);return {ok:true};}
     if(action==="deleteExtraShift"){mockAdmin(db,p);const s=db.extraShifts.find(x=>x.SHIFT_ID===p.shiftId);if(s)s.STATUS="삭제";db.extraJoins.filter(x=>x.SHIFT_ID===p.shiftId).forEach(x=>x.STATUS="삭제");writeMock(db);return {ok:true};}
-    if(action==="applyExtraShift"){const s=mockAuthStudent(db,p),sh=db.extraShifts.find(x=>x.SHIFT_ID===p.shiftId&&x.STATUS==="모집중");if(!sh)throw new Error("현재 모집 중이 아니야.");const joins=db.extraJoins.filter(x=>x.SHIFT_ID===sh.SHIFT_ID&&x.STATUS==="신청");if(joins.some(x=>x.STUDENT_KEY===s.STUDENT_KEY))throw new Error("이미 신청했어.");if(joins.length>=num(sh.CAPACITY))throw new Error("모집 인원이 찼어.");db.extraJoins.push({JOIN_ID:uid("J"),SHIFT_ID:sh.SHIFT_ID,STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,APPLIED_AT:new Date().toISOString(),STATUS:"신청"});writeMock(db);return {ok:true};}
+    if(action==="applyExtraShift"){const s=mockAuthStudent(db,p),termId=mockActiveTermId(db),sh=db.extraShifts.find(x=>x.SHIFT_ID===p.shiftId&&x.TERM_ID===termId&&x.STATUS==="모집중");if(!sh)throw new Error("현재 모집 중이 아니야.");const joins=db.extraJoins.filter(x=>x.SHIFT_ID===sh.SHIFT_ID&&x.TERM_ID===termId&&x.STATUS==="신청");if(joins.some(x=>x.STUDENT_KEY===s.STUDENT_KEY))throw new Error("이미 신청했어.");if(joins.length>=num(sh.CAPACITY))throw new Error("모집 인원이 찼어.");db.extraJoins.push({JOIN_ID:uid("J"),SHIFT_ID:sh.SHIFT_ID,STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,APPLIED_AT:new Date().toISOString(),STATUS:"신청",TERM_ID:termId});writeMock(db);return {ok:true};}
     if(action==="deleteExtraJoin"){mockAdmin(db,p);const j=db.extraJoins.find(x=>x.JOIN_ID===p.joinId);if(j)j.STATUS="삭제";writeMock(db);return {ok:true};}
     if(action==="createPublicNotice"){
       mockAdmin(db,p);
       db.publicNotices=db.publicNotices||[];
-      db.publicNotices.push({PUBLIC_NOTICE_ID:uid("PN"),DATE:p.date||isoDate(new Date()),TITLE:p.title||"안내",CONTENT:p.content||"",LINK:p.link||"",ACTIVE:"Y",CREATED_AT:new Date().toISOString()});
+      db.publicNotices.push({PUBLIC_NOTICE_ID:uid("PN"),DATE:p.date||isoDate(new Date()),TITLE:p.title||"안내",CONTENT:p.content||"",LINK:p.link||"",ACTIVE:"Y",CREATED_AT:new Date().toISOString(),TERM_ID:p.termId||mockActiveTermId(db)});
       writeMock(db);return {ok:true};
     }
     if(action==="deletePublicNotice"){
@@ -193,22 +221,37 @@
       if(n)n.ACTIVE="N";
       writeMock(db);return {ok:true};
     }
-    if(action==="createNotice"){mockAdmin(db,p);db.notices.push({NOTICE_ID:uid("N"),DATE:p.date,TITLE:p.title,CONTENT:p.content,LINK:p.link||"",ACTIVE:"Y",CREATED_AT:new Date().toISOString()});writeMock(db);return {ok:true};}
+    if(action==="createNotice"){mockAdmin(db,p);db.notices.push({NOTICE_ID:uid("N"),DATE:p.date,TITLE:p.title,CONTENT:p.content,LINK:p.link||"",ACTIVE:"Y",CREATED_AT:new Date().toISOString(),TERM_ID:p.termId||mockActiveTermId(db)});writeMock(db);return {ok:true};}
     if(action==="deleteNotice"){mockAdmin(db,p);const n=db.notices.find(x=>x.NOTICE_ID===p.noticeId);if(n)n.ACTIVE="N";writeMock(db);return {ok:true};}
     if(action==="upsertEvent"){
       mockAdmin(db,p);
       let e=p.eventId?(db.events||[]).find(x=>x.EVENT_ID===p.eventId):null;
-      const v={EVENT_ID:e?.EVENT_ID||uid("E"),DATE:p.date,TITLE:p.title,MESSAGE:p.message||"",LEVEL:p.level||"주의",SHOW_PUBLIC:p.showPublic||"Y",ACTIVE:"Y",CREATED_AT:e?.CREATED_AT||new Date().toISOString()};
+      const v={EVENT_ID:e?.EVENT_ID||uid("E"),DATE:p.date,TITLE:p.title,MESSAGE:p.message||"",LEVEL:p.level||"주의",SHOW_PUBLIC:p.showPublic||"Y",ACTIVE:"Y",CREATED_AT:e?.CREATED_AT||new Date().toISOString(),TERM_ID:p.termId||mockActiveTermId(db)};
       if(e)Object.assign(e,v);else{db.events=db.events||[];db.events.push(v);}
       writeMock(db);return {ok:true};
     }
     if(action==="deleteEvent"){
       mockAdmin(db,p);const e=(db.events||[]).find(x=>x.EVENT_ID===p.eventId);if(e)e.ACTIVE="N";writeMock(db);return {ok:true};
     }
-    if(action==="saveSettings"){mockAdmin(db,p);Object.keys(db.settings).forEach(()=>{});Object.entries(p).forEach(([k,v])=>{if(k!=="pin"&&k!=="action")db.settings[k]=v;});writeMock(db);return {ok:true};}
-    if(action==="saveBudget"){mockAdmin(db,p);["국가","교내"].forEach(type=>{let b=db.budgets.find(x=>x.WORK_TYPE===type);if(!b){b={WORK_TYPE:type,TOTAL_BUDGET:"0",NOTE:""};db.budgets.push(b);}b.TOTAL_BUDGET=String(p[type==="국가"?"national":"internal"]??"0");});writeMock(db);return {ok:true};}
-    if(action==="upsertHoliday"){mockAdmin(db,p);let h=p.holidayId?db.holidays.find(x=>x.HOLIDAY_ID===p.holidayId):null;const v={HOLIDAY_ID:h?.HOLIDAY_ID||uid("H"),DATE:p.date,NAME:p.name,ACTIVE:"Y",SOURCE:p.source||"관리자 입력"};if(h)Object.assign(h,v);else db.holidays.push(v);writeMock(db);return {ok:true};}
+    if(action==="saveSettings"){mockAdmin(db,p);const termId=p.termId||mockActiveTermId(db);db.termSettings[termId]=db.termSettings[termId]||{};Object.entries(p).forEach(([k,v])=>{if(!["pin","action","termId"].includes(k))db.termSettings[termId][k]=v;});writeMock(db);return {ok:true};}
+    if(action==="saveBudget"){mockAdmin(db,p);const termId=p.termId||mockActiveTermId(db);["국가","교내"].forEach(type=>{let b=db.budgets.find(x=>x.WORK_TYPE===type&&x.TERM_ID===termId);if(!b){b={WORK_TYPE:type,TOTAL_BUDGET:"0",NOTE:"",TERM_ID:termId};db.budgets.push(b);}b.TOTAL_BUDGET=String(p[type==="국가"?"national":"internal"]??"0");});writeMock(db);return {ok:true};}
+    if(action==="upsertHoliday"){mockAdmin(db,p);const termId=p.termId||mockActiveTermId(db);let h=p.holidayId?db.holidays.find(x=>x.HOLIDAY_ID===p.holidayId&&x.TERM_ID===termId):null;const v={HOLIDAY_ID:h?.HOLIDAY_ID||uid("H"),DATE:p.date,NAME:p.name,ACTIVE:"Y",SOURCE:p.source||"관리자 입력",TERM_ID:termId};if(h)Object.assign(h,v);else db.holidays.push(v);writeMock(db);return {ok:true};}
     if(action==="deleteHoliday"){mockAdmin(db,p);const h=db.holidays.find(x=>x.HOLIDAY_ID===p.holidayId);if(h)h.ACTIVE="N";writeMock(db);return {ok:true};}
+    if(action==="createTerm"){
+      mockAdmin(db,p);const year=String(p.year||""),type=String(p.termType||""),termId=`${year}-${type}`,labels={"1":"1학기",summer:"여름학기","2":"2학기",winter:"겨울학기"};
+      if(!/^20\d{2}$/.test(year)||!labels[type]||!p.startDate||!p.endDate||p.startDate>p.endDate)throw new Error("학기 정보를 확인해줘.");
+      if(db.terms.some(x=>x.TERM_ID===termId))throw new Error("이미 생성된 학기야.");
+      const source=p.copyFromTermId||mockActiveTermId(db),name=`${year}-${labels[type]}`;
+      db.terms.push({TERM_ID:termId,YEAR:year,TERM_TYPE:type,TERM_NAME:name,START_DATE:p.startDate,END_DATE:p.endDate,STATUS:"INACTIVE",CREATED_AT:new Date().toISOString()});
+      const base={...(db.termSettings[source]||db.settings),TERM_NAME:name,SEMESTER_START:p.startDate,CLASS_END:p.endDate,MAKEUP_DATE:"",SEMESTER_END:p.endDate,BREAK_START:"",BREAK_END:p.endDate,SHORT_START:"",SHORT_END:""};db.termSettings[termId]=base;
+      if(p.copyStudents==="Y")mockRows(db,"students",source).filter(x=>x.ACTIVE==="Y").forEach(x=>db.students.push({...x,TERM_ID:termId}));
+      if(p.copySchedules==="Y")mockRows(db,"schedules",source).filter(x=>x.ACTIVE==="Y").forEach(x=>db.schedules.push({...x,SCHEDULE_ID:uid("S"),TERM_ID:termId}));
+      if(p.copyHolidays==="Y")mockRows(db,"holidays",source).filter(x=>x.ACTIVE==="Y").forEach(x=>db.holidays.push({...x,HOLIDAY_ID:uid("H"),TERM_ID:termId}));
+      ["국가","교내"].forEach(typeName=>db.budgets.push({WORK_TYPE:typeName,TOTAL_BUDGET:"0",NOTE:"새 학기 초기값",TERM_ID:termId}));writeMock(db);return {ok:true,termId};
+    }
+    if(action==="activateTerm"){
+      mockAdmin(db,p);const target=db.terms.find(x=>x.TERM_ID===p.activateTermId);if(!target)throw new Error("학기를 찾을 수 없어.");db.terms.forEach(x=>{if(x.TERM_ID===target.TERM_ID)x.STATUS="ACTIVE";else if(x.STATUS==="ACTIVE")x.STATUS="ARCHIVED";});db.settings.ACTIVE_TERM_ID=target.TERM_ID;db.settings.TERM_NAME=target.TERM_NAME;writeMock(db);return {ok:true,activeTermId:target.TERM_ID};
+    }
     throw new Error(`지원하지 않는 작업: ${action}`);
   }
 
@@ -224,7 +267,7 @@
     return "";
   }
   function isWeekend(date){const x=parseDate(date);return !x||x.getDay()===0||x.getDay()===6;}
-  function periodType(d,date){const s=dataSettings(d);if(date>=s.SEMESTER_START&&date<=s.SEMESTER_END)return "학기중";if(date>=s.BREAK_START&&date<=s.BREAK_END)return "방학중";return "";}
+  function periodType(d,date){const s=dataSettings(d);if(s.SEMESTER_START&&date>=s.SEMESTER_START&&date<=s.SEMESTER_END)return "학기중";if(s.BREAK_START&&date>=s.BREAK_START&&date<=s.BREAK_END)return "방학중";return "";}
   function workHours(d,date){const s=dataSettings(d),short=s.SHORT_START&&s.SHORT_END&&date>=s.SHORT_START&&date<=s.SHORT_END;return short?{mode:"단축근무",start:s.SHORT_START_TIME||"10:00",end:s.SHORT_END_TIME||"17:00"}:{mode:"정상근무",start:s.NORMAL_START_TIME||"09:00",end:s.NORMAL_END_TIME||"17:00"};}
   function effectiveInterval(d,schedule,date){
     if(schedule.ACTIVE!=="Y"||schedule.PERIOD_TYPE!==periodType(d,date)||holidayFor(d,date)||isWeekend(date))return null;
@@ -299,7 +342,7 @@
     if(title && s.LANDING_TITLE)title.textContent=normalizeLandingText(s.LANDING_TITLE);
     if(desc && s.LANDING_DESCRIPTION)desc.textContent=normalizeLandingText(s.LANDING_DESCRIPTION);
     if(s.SYSTEM_NAME)$("#login-system-name").textContent=s.SYSTEM_NAME;
-    if(s.TERM_NAME)$("#login-term").textContent=s.TERM_NAME;
+    if(s.TERM_NAME){$("#login-term").textContent=s.TERM_NAME;$("#sidebar-term").textContent=s.TERM_NAME;}
 
     const link=$("#login-handover-link");
     if(link && s.HANDOVER_PDF_URL){
@@ -311,7 +354,7 @@
     }
   }
 
-  function publicHomeCacheKey(){return "work_public_home_v027";}
+  function publicHomeCacheKey(){return "work_public_home_v030";}
   function readPublicHomeCache(){
     try{
       const x=JSON.parse(localStorage.getItem(publicHomeCacheKey())||"null");
@@ -355,6 +398,7 @@
       state.publicHome=cached.data;
       applyLandingText(cached.data.settings||{});
       renderLandingPublicNotices(cached.data.notices||[]);
+      updateTermChrome(cached.data);
     }
     try{
       const r=await api("getPublicHome");
@@ -362,6 +406,7 @@
       writePublicHomeCache(r);
       applyLandingText(r.settings||{});
       renderLandingPublicNotices(r.notices||[]);
+      updateTermChrome(r);
     }catch(e){
       console.warn(`첫 화면 정보 로딩 실패 ${attempt}/3`,e);
       if(!cached && attempt<3)setTimeout(()=>loadPublicHome(force,attempt+1),attempt*700);
@@ -378,7 +423,7 @@
 
   // ---------------- login / nav ----------------
   async function init(){
-    $("#login-system-name").textContent=CONFIG.SYSTEM_NAME||"근로장학생 근무관리";$("#login-term").textContent=CONFIG.TERM_NAME||"";$("#sidebar-name").textContent=CONFIG.SYSTEM_NAME||"근로장학생 관리";$("#sidebar-term").textContent=CONFIG.TERM_NAME||"";$("#mode-badge").textContent=CONFIG.DEMO_MODE?"DEMO":"LIVE";$("#today-label").textContent=new Intl.DateTimeFormat("ko-KR",{dateStyle:"full"}).format(new Date());
+    $("#login-system-name").textContent=CONFIG.SYSTEM_NAME||"근로장학생 근무관리";$("#login-term").textContent=CONFIG.TERM_NAME||"학기 정보 불러오는 중";$("#sidebar-name").textContent=CONFIG.SYSTEM_NAME||"근로장학생 관리";$("#sidebar-term").textContent=CONFIG.TERM_NAME||"학기 정보 불러오는 중";$("#mode-badge").textContent=CONFIG.DEMO_MODE?"DEMO":"LIVE";$("#today-label").textContent=new Intl.DateTimeFormat("ko-KR",{dateStyle:"full"}).format(new Date());
     loadPublicHome();
     $$('[data-login-tab]').forEach(b=>b.onclick=()=>{$$('[data-login-tab]').forEach(x=>x.classList.toggle('active',x===b));$("#student-login-form").classList.toggle("hidden",b.dataset.loginTab!=="student");$("#admin-login-form").classList.toggle("hidden",b.dataset.loginTab!=="admin");$("#demo-preview-box").classList.toggle("hidden",!CONFIG.DEMO_MODE||b.dataset.loginTab!=="student");$("#login-student-resources").classList.toggle("hidden",b.dataset.loginTab!=="student");});
     $("#student-login-form").onsubmit=studentLogin;$("#admin-login-form").onsubmit=adminLogin;$$('.logout-btn').forEach(b=>b.onclick=logout);$$('.refresh-btn').forEach(b=>b.onclick=()=>state.view&&navigate(state.view,{force:true}));
@@ -390,7 +435,7 @@
     try{
       const previewKey=$("#demo-student-select").value;
       const r=await api("getStudentDashboard",{previewKey});
-      state.mode="student";state.auth={previewKey};state.student=r.student;state.studentData=r;
+      state.mode="student";state.auth={previewKey};state.student=r.student;state.studentData=r;state.selectedTermId=r.activeTermId||null;
       enterApp("student-home",{useLoaded:true});
     }catch(e){toast(e.message);}
   }
@@ -399,7 +444,7 @@
     try{
       const studentId=$("#student-id").value.trim(),loginPin=$("#student-login-pin").value.trim();
       const r=await api("getStudentDashboard",{studentId,loginPin});
-      state.mode="student";state.auth={studentId,loginPin};state.student=r.student;state.studentData=r;
+      state.mode="student";state.auth={studentId,loginPin};state.student=r.student;state.studentData=r;state.selectedTermId=r.activeTermId||null;
       enterApp("student-home",{useLoaded:true});
     }catch(err){toast(err.message);}
   }
@@ -408,7 +453,7 @@
     try{
       const pin=$("#admin-pin").value.trim();
       const r=await api("getAdminDashboard",{pin});
-      state.mode="admin";state.auth={pin};state.adminData=r;
+      state.mode="admin";state.auth={pin};state.adminData=r;state.selectedTermId=r.selectedTermId||r.activeTermId||null;
       enterApp("admin-dashboard",{useLoaded:true});
     }catch(err){toast(err.message);}
   }
@@ -418,12 +463,13 @@
     $("#admin-sidebar").classList.toggle("hidden",state.mode!=="admin");
     $("#student-bottom-nav").classList.toggle("hidden",state.mode!=="student");
     $(".main").classList.toggle("student-mode",state.mode==="student");
+    updateTermChrome(state.mode==="admin"?state.adminData:state.studentData);
     navigate(view,{force:!opts.useLoaded});
   }
-  function logout(){Object.assign(state,{mode:null,auth:null,student:null,adminData:null,studentData:null,view:null});$("#app-shell").classList.add("hidden");$("#login-screen").classList.remove("hidden");closeModal();loadPublicHome(true);}
+  function logout(){Object.assign(state,{mode:null,auth:null,student:null,adminData:null,studentData:null,view:null,selectedTermId:null});$("#app-shell").classList.add("hidden");$("#login-screen").classList.remove("hidden");closeModal();loadPublicHome(true);}
   function bindNav(){$$("#admin-nav [data-view],#student-bottom-nav [data-view]").forEach(b=>b.onclick=()=>navigate(b.dataset.view));}
   async function navigate(view,opts={}){state.view=view;$$('#admin-nav [data-view],#student-bottom-nav [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));const titles={
-    "admin-dashboard":["WORKSPACE","대시보드"],"admin-schedule":["SCHEDULE","근무표"],"admin-absence":["ABSENCE & SUBSTITUTE","결근·대타"],"admin-extra":["EXTRA SHIFT","추가근무"],"admin-students":["STUDENTS","학생관리"],"admin-budget":["BUDGET & HOURS","예산·시간"],"admin-notices":["NOTICE","공지"],"admin-settings":["SETTINGS","운영설정"],
+    "admin-dashboard":["WORKSPACE","대시보드"],"admin-schedule":["SCHEDULE","근무표"],"admin-absence":["ABSENCE & SUBSTITUTE","결근·대타"],"admin-extra":["EXTRA SHIFT","추가근무"],"admin-students":["STUDENTS","학생관리"],"admin-budget":["BUDGET & HOURS","예산·시간"],"admin-notices":["NOTICE","공지"],"admin-terms":["TERMS","학기 관리"],"admin-settings":["SETTINGS","운영설정"],
     "student-home":["TODAY","홈"],"student-schedule":["MY CALENDAR","내 달력"],"student-substitute":["SUBSTITUTE","대타 모집"],"student-extra":["EXTRA SHIFT","추가근무"],"student-records":["HISTORY","내 기록"]};$("#page-eyebrow").textContent=titles[view]?.[0]||"WORKSPACE";$("#page-title").textContent=titles[view]?.[1]||"";
     const hasData=state.mode==="admin"?!!state.adminData:!!state.studentData;
     if(hasData&&!opts.force){render(view);return;}
@@ -434,12 +480,18 @@
         state.studentData=await api("getStudentDashboard",state.auth);
         state.student=state.studentData.student;
       }
-      render(view);
+      updateTermChrome(state.mode==="admin"?state.adminData:state.studentData);render(view);
     }catch(e){
       $("#page-content").innerHTML=`<div class="card"><div class="empty">${esc(e.message)}</div></div>`;
     }
   }
-  function render(v){({"admin-dashboard":renderAdminDashboard,"admin-schedule":renderAdminSchedule,"admin-absence":renderAdminAbsence,"admin-extra":renderAdminExtra,"admin-students":renderAdminStudents,"admin-budget":renderAdminBudget,"admin-notices":renderAdminNotices,"admin-settings":renderAdminSettings,"student-home":renderStudentHome,"student-schedule":renderStudentCalendar,"student-substitute":renderStudentSubstitute,"student-extra":renderStudentExtra,"student-records":renderStudentRecords}[v]||(()=>{}))();}
+  function render(v){({"admin-dashboard":renderAdminDashboard,"admin-schedule":renderAdminSchedule,"admin-absence":renderAdminAbsence,"admin-extra":renderAdminExtra,"admin-students":renderAdminStudents,"admin-budget":renderAdminBudget,"admin-notices":renderAdminNotices,"admin-terms":renderAdminTerms,"admin-settings":renderAdminSettings,"student-home":renderStudentHome,"student-schedule":renderStudentCalendar,"student-substitute":renderStudentSubstitute,"student-extra":renderStudentExtra,"student-records":renderStudentRecords}[v]||(()=>{}))();applyAdminReadOnly();}
+  function applyAdminReadOnly(){
+    if(!adminReadOnly())return;
+    const root=$("#page-content"),term=selectedTermName(state.adminData);
+    root.insertAdjacentHTML("afterbegin",`<div class="readonly-banner"><strong>${esc(term)} 비활성 학기 조회</strong><span>기록 보호를 위해 읽기 전용입니다. 수정하려면 먼저 이 학기를 현재 운영 학기로 활성화하세요.</span></div>`);
+    $$('input,select,textarea,.del-schedule,.approve-sub,.reject-sub,.delete-sub,.delete-absence,.del-shift,.del-join,.edit-student,.del-student,#new-student,#add-schedule,#new-extra,#edit-budget,#new-public-notice,.del-public-notice,#new-notice,.del-notice,#add-event,.del-event,#add-holiday,.del-holiday',root).forEach(el=>{el.disabled=true;});
+  }
 
   // ---------------- common UI ----------------
   function badge(text,tone="green"){return `<span class="badge ${tone}">${esc(text)}</span>`;}
@@ -608,6 +660,33 @@
   }
 
   function openNoticeModal(){showModal('공지 등록',`<form id="notice-form"><div class="form-grid"><label>날짜<input type="date" name="date" value="${isoDate(new Date())}" required></label><label>제목<input name="title" value="오늘의 안내" required></label><label class="full">내용<textarea name="content" required></textarea></label><label class="full">링크<input type="url" name="link" placeholder="https://..."></label></div><div class="form-actions"><button type="button" class="ghost modal-cancel">취소</button><button class="primary">등록</button></div></form>`);$('.modal-cancel').onclick=closeModal;$('#notice-form').onsubmit=async e=>{e.preventDefault();try{await api('createNotice',{...state.auth,...Object.fromEntries(new FormData(e.target))});closeModal();toast('공지를 등록했어.');navigate('admin-notices',{force:true});}catch(err){toast(err.message);}};}
+
+  // ---------------- ADMIN TERMS ----------------
+  function renderAdminTerms(){
+    const d=state.adminData,activeId=d.activeTermId||d.settings?.ACTIVE_TERM_ID,terms=[...(d.terms||[])].sort((a,b)=>String(b.START_DATE||b.TERM_ID).localeCompare(String(a.START_DATE||a.TERM_ID)));
+    $("#page-content").innerHTML=`<div class="section-head" style="margin-top:0"><div><h3>학기 목록</h3><p>과거 기록은 보존되며 조회 시 자동으로 읽기 전용이 됩니다.</p></div><button id="new-term" class="primary">새 학기 생성</button></div>
+      <div class="term-list">${terms.map(t=>{const active=t.TERM_ID===activeId,selected=t.TERM_ID===(d.selectedTermId||state.selectedTermId),status=t.STATUS==="INACTIVE"?"비활성":"종료";return `<article class="term-card ${active?"active":""}"><div><div class="term-title"><h3>${esc(t.TERM_NAME)}</h3>${active?badge("현재 운영","green"):badge(status,"gray")}${selected&&!active?badge("조회 중","blue"):""}</div><p>${fmtDate(t.START_DATE)} ~ ${fmtDate(t.END_DATE)}</p><small>내부 ID · ${esc(t.TERM_ID)}</small></div><div class="term-actions"><button class="ghost view-term" data-id="${esc(t.TERM_ID)}">${selected?"조회 새로고침":"이 학기 조회"}</button>${active?"":`<button class="soft activate-term" data-id="${esc(t.TERM_ID)}" data-name="${esc(t.TERM_NAME)}">현재 학기로 활성화</button>`}</div></article>`;}).join("")||'<div class="card empty">등록된 학기가 없습니다. Apps Script의 migrateTerms()를 먼저 실행해 주세요.</div>'}</div>
+      <div class="source-note term-safety-note"><strong>데이터 보호 원칙</strong><br>학기 생성은 기존 행을 삭제하거나 덮어쓰지 않습니다. 학생·PIN과 선택한 기본정보만 새 TERM_ID로 복제되고 결근, 대타, 추가근무, 예산 실적 등 운영 기록은 빈 상태로 시작합니다. 학기 삭제 기능은 제공하지 않습니다.</div>`;
+    $("#new-term").onclick=openTermModal;
+    $$(".view-term").forEach(b=>b.onclick=()=>{state.selectedTermId=b.dataset.id;navigate("admin-dashboard",{force:true});});
+    $$(".activate-term").forEach(b=>b.onclick=async()=>{if(!confirm(`현재 운영 학기를 ${b.dataset.name}로 변경하시겠습니까?\n\n기존 학기 데이터는 보존되며 학생 화면은 즉시 새 학기로 전환됩니다.`))return;try{await api("activateTerm",{...state.auth,activateTermId:b.dataset.id});state.selectedTermId=b.dataset.id;clearPublicHomeCache();await loadPublicHome(true);toast("현재 운영 학기를 변경했습니다.");navigate("admin-terms",{force:true});}catch(e){toast(e.message);}});
+  }
+  function openTermModal(){
+    const d=state.adminData,active=activeTerm(d),year=new Date().getFullYear();
+    showModal("새 학기 생성",`<form id="term-form"><div class="form-grid">
+      <label>연도<input type="number" name="year" min="2020" max="2100" value="${year}" required></label>
+      <label>학기<select name="termType"><option value="1">1학기</option><option value="summer">여름학기</option><option value="2">2학기</option><option value="winter">겨울학기</option></select></label>
+      <label>학기 시작일<input type="date" name="startDate" required></label><label>학기 종료일<input type="date" name="endDate" required></label>
+      <label class="full">복사 기준 학기<select name="copyFromTermId">${(d.terms||[]).map(t=>`<option value="${esc(t.TERM_ID)}" ${t.TERM_ID===active?.TERM_ID?"selected":""}>${esc(t.TERM_NAME)}</option>`).join("")}</select></label>
+      <fieldset class="copy-options full"><legend>새 학기로 복사할 기본정보</legend>
+        <label><input type="checkbox" name="copyStudents" value="Y" checked> 학생 기본정보와 로그인 PIN</label>
+        <label><input type="checkbox" name="copySchedules" value="Y"> 고정 근무표</label>
+        <label><input type="checkbox" name="copySettings" value="Y" checked> 운영 기본설정</label>
+        <label><input type="checkbox" name="copyHolidays" value="Y" checked> 휴일</label>
+      </fieldset></div><div class="source-note" style="margin-top:12px">예산은 0원으로, 결근·대타·추가근무·공지·이벤트 등 실적 데이터는 빈 상태로 생성됩니다. 생성만으로 현재 학기가 바뀌지는 않습니다.</div><div class="form-actions"><button type="button" class="ghost modal-cancel">취소</button><button class="primary">학기 생성</button></div></form>`);
+    $(".modal-cancel").onclick=closeModal;
+    $("#term-form").onsubmit=async e=>{e.preventDefault();const form=e.target,values=Object.fromEntries(new FormData(form));if(values.startDate>values.endDate){toast("종료일은 시작일 이후여야 합니다.");return;}if(form.elements.copySchedules.checked&&!form.elements.copyStudents.checked){toast("근무표를 복사하려면 학생 기본정보도 함께 복사해야 합니다.");return;}try{await api("createTerm",{...state.auth,...values});closeModal();toast("새 학기를 생성했습니다. 확인 후 활성화해 주세요.");navigate("admin-terms",{force:true});}catch(err){toast(err.message);}};
+  }
 
   // ---------------- ADMIN SETTINGS ----------------
   function renderAdminSettings(){

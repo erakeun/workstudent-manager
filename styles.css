@@ -778,3 +778,17 @@ tr:last-child td{border-bottom:0}
 #app-shell.hidden{
   display:none !important;
 }
+/* V0.3.0 — 학기 관리 */
+.term-header-badge{display:inline-flex;align-items:center;max-width:280px;padding:7px 11px;border-radius:999px;background:var(--green-soft);color:var(--green);font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.term-header-badge.readonly{background:var(--blue-soft);color:var(--blue)}
+.term-list{display:grid;gap:12px}
+.term-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:var(--shadow)}
+.term-card.active{border-color:rgba(22,121,75,.42);box-shadow:0 0 0 2px rgba(22,121,75,.08),var(--shadow)}
+.term-title,.term-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.term-title h3{margin:0}.term-card p{margin:6px 0;color:var(--muted);font-size:13px}.term-card small{color:var(--muted)}
+.term-safety-note{margin-top:18px;line-height:1.7}
+.readonly-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px;padding:13px 16px;border:1px solid #bdd9ef;border-radius:13px;background:var(--blue-soft);color:#16577f;font-size:13px}
+.readonly-banner strong{white-space:nowrap}.readonly-banner span{line-height:1.5}
+.copy-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0;padding:14px;border:1px solid var(--line);border-radius:12px}
+.copy-options legend{padding:0 5px;font-size:13px;font-weight:900}.copy-options label{display:flex;align-items:center;gap:8px;font-size:13px}.copy-options input{width:auto}
+@media(max-width:760px){.term-header-badge{max-width:150px}.term-card{align-items:flex-start;flex-direction:column}.term-actions{width:100%}.term-actions button{flex:1}.readonly-banner{align-items:flex-start;flex-direction:column}.copy-options{grid-template-columns:1fr}}

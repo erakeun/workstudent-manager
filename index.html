@@ -33,7 +33,7 @@
           <div>
             <p class="eyebrow green">SIGN IN</p>
             <h2 id="login-system-name">근로장학생 근무관리</h2>
-            <p id="login-term">2026-2학기</p>
+            <p id="login-term">학기 정보 불러오는 중</p>
           </div>
           <span id="mode-badge" class="mode-badge">DEMO</span>
         </div>
@@ -44,7 +44,7 @@
         </div>
 
         <div id="demo-preview-box" class="demo-preview hidden">
-          <strong>실제 2학기 데이터 미리보기</strong>
+          <strong>현재 학기 데이터 미리보기</strong>
           <p>원본 파일에는 학번이 없어 데모에서는 이름을 골라 학생 화면을 바로 볼 수 있어.</p>
           <select id="demo-student-select"></select>
           <button id="demo-preview-btn" class="soft wide" type="button">선택 학생으로 미리보기</button>
@@ -85,7 +85,7 @@
     <aside id="admin-sidebar" class="sidebar hidden">
       <div class="sidebar-brand">
         <div class="brand-mark small">W</div>
-        <div><strong id="sidebar-name">근로장학생 관리</strong><small id="sidebar-term">2026-2학기</small></div>
+        <div><strong id="sidebar-name">근로장학생 관리</strong><small id="sidebar-term">학기 정보 불러오는 중</small></div>
       </div>
       <nav id="admin-nav">
         <button class="nav-item active" data-view="admin-dashboard">대시보드</button>
@@ -95,6 +95,7 @@
         <button class="nav-item" data-view="admin-students">학생관리</button>
         <button class="nav-item" data-view="admin-budget">예산·시간</button>
         <button class="nav-item" data-view="admin-notices">공지</button>
+        <button class="nav-item" data-view="admin-terms">학기 관리</button>
         <button class="nav-item" data-view="admin-settings">운영설정</button>
       </nav>
       <div class="sidebar-bottom">
@@ -111,6 +112,7 @@
           <h2 id="page-title">대시보드</h2>
         </div>
         <div class="topbar-actions">
+          <span id="header-term" class="term-header-badge">학기 정보 불러오는 중</span>
           <span id="today-label"></span>
           <button class="ghost compact refresh-btn">새로고침</button>
           <button class="ghost compact mobile-logout logout-btn">로그아웃</button>
