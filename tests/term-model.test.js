@@ -81,6 +81,10 @@ function rows(book,name){const data=book.getSheetByName(name).data,headers=data[
   c.upsertStudent_({pin:"1234",termId:"2027-1",studentId:"20270002",name:"학생B",phone:"010-0000-2222",loginPin:"2222",workType:"교내",active:"Y"});
   c.createAbsence_({studentId:"20260001",loginPin:"1111",date:"2027-03-08",start:"09:00",end:"12:00",reason:"수업"});
   const absence=rows(book,"출근불가").find(x=>x.TERM_ID==="2027-1");
+  c.createAdminAbsence_({pin:"1234",termId:"2027-1",studentKey:"K01",date:"2027-03-15",start:"09:00",end:"12:00",reason:"학생 요청",note:"관리자 대리 등록"});
+  assert.equal(rows(book,"출근불가").find(x=>x.DATE==="2027-03-15").NOTE,"관리자 대리 등록");
+  assert.throws(()=>c.createAdminAbsence_({pin:"1234",termId:"2027-1",studentKey:"K01",date:"2027-03-16",start:"13:00",end:"14:00"}),/고정근무와 겹치는/);
+  assert.throws(()=>c.createAdminAbsence_({pin:"1234",termId:"2026-2",studentKey:"K01",date:"2026-09-14",start:"09:00",end:"12:00"}),/읽기 전용/);
   c.applySubstitute_({studentId:"20270002",loginPin:"2222",absenceId:absence.ABSENCE_ID});
   const application=rows(book,"대타신청").find(x=>x.TERM_ID==="2027-1");
   c.approveSubstitute_({pin:"1234",termId:"2027-1",appId:application.APP_ID});
@@ -98,7 +102,7 @@ function rows(book,name){const data=book.getSheetByName(name).data,headers=data[
   c.createNotice_({pin:"1234",termId:"2027-1",date:"2027-03-02",title:"개강"});
   c.createPublicNotice_({pin:"1234",termId:"2027-1",date:"2027-03-02",title:"근로 시작"});
   const dashboard=c.getAdminDashboard_({pin:"1234",termId:"2027-1"});
-  assert.equal(dashboard.readOnly,false);assert.equal(dashboard.students.length,2);assert.equal(dashboard.absences.length,1);assert.equal(dashboard.extraShifts.length,1);
+  assert.equal(dashboard.readOnly,false);assert.equal(dashboard.students.length,2);assert.equal(dashboard.absences.length,2);assert.equal(dashboard.extraShifts.length,1);
   assert.equal(dashboard.settings.STUDENT_HOME_MESSAGE,"새 학기 안내");
   assert.equal(dashboard.budgets.find(x=>x.WORK_TYPE==="국가").TOTAL_BUDGET,"500000");
   assert.equal(rows(book,"출근불가").filter(x=>x.TERM_ID==="2026-2").length,1,"new operations must not mix into legacy term");

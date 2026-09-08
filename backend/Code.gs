@@ -1,9 +1,9 @@
 /**
- * 근로장학생 근무관리 V0.3.0
+ * 근로장학생 근무관리 V0.3.1
  * Google Sheet 원본을 보존하면서 TERM_ID로 학기 데이터를 분리한다.
  * 기존 배포본의 모든 action 계약을 유지한다.
  */
-const APP_VERSION_ = "V0.3.0";
+const APP_VERSION_ = "V0.3.1";
 const INITIAL_TERM_ID_ = "2026-2";
 const INITIAL_TERM_NAME_ = "2026-2학기";
 
@@ -86,7 +86,7 @@ function route_(action,p){
     case "studentLogin":return studentLogin_(p);case "adminLogin":return adminLogin_(p);
     case "getPublicHome":return getPublicHome_();case "getStudentDashboard":return getStudentDashboard_(p);case "getAdminDashboard":return getAdminDashboard_(p);
     case "createTerm":return createTerm_(p);case "activateTerm":return activateTerm_(p);
-    case "createAbsence":return createAbsence_(p);case "cancelAbsence":return cancelAbsence_(p);case "deleteAbsence":return deleteAbsence_(p);
+    case "createAbsence":return createAbsence_(p);case "createAdminAbsence":return createAdminAbsence_(p);case "cancelAbsence":return cancelAbsence_(p);case "deleteAbsence":return deleteAbsence_(p);
     case "applySubstitute":return applySubstitute_(p);case "approveSubstitute":return approveSubstitute_(p);case "rejectSubstitute":return rejectSubstitute_(p);case "deleteSubstitute":return deleteSubstitute_(p);
     case "upsertStudent":return upsertStudent_(p);case "deleteStudent":return deleteStudent_(p);case "addSchedule":return addSchedule_(p);case "deleteSchedule":return deleteSchedule_(p);
     case "createExtraShift":return createExtraShift_(p);case "deleteExtraShift":return deleteExtraShift_(p);case "applyExtraShift":return applyExtraShift_(p);case "deleteExtraJoin":return deleteExtraJoin_(p);
@@ -161,6 +161,13 @@ function createAbsence_(p){
   const owns=rowsForTerm_(SHEETS.SCHEDULES,termId).some(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.ACTIVE==="Y"&&x.PERIOD_TYPE===pt&&x.DAY===day&&overlap_(x.START,x.END,start,end));if(!owns)throw new Error("본인의 고정근무와 겹치는 시간만 신청할 수 있어.");
   if(rowsForTerm_(SHEETS.ABSENCES,termId).some(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.DATE===p.date&&!['취소','삭제'].includes(x.STATUS)&&overlap_(x.START,x.END,start,end)))throw new Error("이미 겹치는 출근불가 신청이 있어.");
   appendObject_(SHEETS.ABSENCES,{ABSENCE_ID:id_("A"),CREATED_AT:now_(),STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,DATE:p.date,START:start,END:end,REASON:p.reason||"개인 일정",NOTE:p.note||"",STATUS:"대타모집",SUBSTITUTE_KEY:"",SUBSTITUTE_ID:"",SUBSTITUTE_NAME:"",TERM_ID:termId});return{ok:true};
+}
+function createAdminAbsence_(p){
+  const termId=writeTermId_(p),s=rowsForTerm_(SHEETS.STUDENTS,termId).find(x=>x.STUDENT_KEY===p.studentKey&&x.ACTIVE==="Y"),start=normalizeTime_(p.start),end=normalizeTime_(p.end);if(!s)throw new Error("학생을 찾을 수 없어.");
+  if(!p.date||!start||!end||timeMin_(start)>=timeMin_(end))throw new Error("날짜와 시간을 확인해줘.");const day=dayKo_(p.date),pt=periodType_(p.date,termId);if(!pt)throw new Error("현재 학기 운영기간 밖이야.");if(isHoliday_(p.date,termId))throw new Error("공휴일에는 고정근무가 없어.");
+  const owns=rowsForTerm_(SHEETS.SCHEDULES,termId).some(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.ACTIVE==="Y"&&x.PERIOD_TYPE===pt&&x.DAY===day&&overlap_(x.START,x.END,start,end));if(!owns)throw new Error("학생의 고정근무와 겹치는 시간만 등록할 수 있어.");
+  if(rowsForTerm_(SHEETS.ABSENCES,termId).some(x=>x.STUDENT_KEY===s.STUDENT_KEY&&x.DATE===p.date&&!['취소','삭제'].includes(x.STATUS)&&overlap_(x.START,x.END,start,end)))throw new Error("이미 겹치는 결근 기록이 있어.");
+  appendObject_(SHEETS.ABSENCES,{ABSENCE_ID:id_("A"),CREATED_AT:now_(),STUDENT_KEY:s.STUDENT_KEY,STUDENT_ID:s.STUDENT_ID,NAME:s.NAME,DATE:p.date,START:start,END:end,REASON:p.reason||"관리자 등록",NOTE:p.note||"",STATUS:"대타모집",SUBSTITUTE_KEY:"",SUBSTITUTE_ID:"",SUBSTITUTE_NAME:"",TERM_ID:termId});return{ok:true};
 }
 function cancelAbsence_(p){const s=authStudent_(p.studentId,p.loginPin||p.last4),termId=activeTermId_(),f=findRow_(SHEETS.ABSENCES,x=>x.ABSENCE_ID===p.absenceId&&x.STUDENT_KEY===s.STUDENT_KEY&&x.TERM_ID===termId);if(!f)throw new Error("신청을 찾을 수 없어.");if(f.row.STATUS==="대타확정")throw new Error("대타 확정 후에는 관리자에게 요청해줘.");setCellByHeader_(f.sh,f.rowNumber,f.headers,"STATUS","취소");return{ok:true};}
 function deleteAbsence_(p){const termId=writeTermId_(p),f=findRow_(SHEETS.ABSENCES,x=>x.ABSENCE_ID===p.absenceId&&x.TERM_ID===termId);if(!f)throw new Error("건을 찾을 수 없어.");setCellByHeader_(f.sh,f.rowNumber,f.headers,"STATUS","삭제");updateWhere_(SHEETS.SUBS,x=>x.ABSENCE_ID===p.absenceId&&x.TERM_ID===termId,"STATUS","삭제");return{ok:true};}

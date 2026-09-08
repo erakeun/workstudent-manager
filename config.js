@@ -1,5 +1,5 @@
 window.WORK_CONFIG = {
-  APP_VERSION: "V0.3.0",
+  APP_VERSION: "V0.3.1",
   SYSTEM_NAME: "근로장학생 근무관리",
   // 학기명은 Apps Script의 현재 활성 학기 설정에서 불러온다.
   TERM_NAME: "",
