@@ -40,7 +40,7 @@ function runtime(){
     Utilities:{getUuid:(()=>{let i=0;return()=>`uuid-${++i}-abcdefgh`;})(),formatDate:(date,_tz,format)=>format==="yyyy-MM-dd"?"2026-09-08":"2026-09-08 12:00:00"},
     Session:{getScriptTimeZone:()=>"Asia/Seoul"}
   };
-  vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,"..","backend","Code.gs"),"utf8"),context);
+  vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,"..","backend","MonthlyHours.gs"),"utf8"),context);vm.runInContext(fs.readFileSync(path.join(__dirname,"..","backend","Code.gs"),"utf8"),context);
   return {context,book};
 }
 
@@ -135,3 +135,5 @@ function rows(book,name){const data=book.getSheetByName(name).data,headers=data[
   assert.equal(rows(book,"출근불가").filter(x=>x.TERM_ID==="2026-2").length,1,"new operations must not mix into legacy term");
   console.log("term-model.test.js: all assertions passed");
 })();
+
+module.exports={runtime,rows};

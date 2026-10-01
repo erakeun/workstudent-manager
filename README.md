@@ -22,4 +22,15 @@ GitHub Pages 프런트엔드와 Google Apps Script/Google Sheet 백엔드로 구
 ```bash
 node --check app.js
 node tests/term-model.test.js
+node tests/monthly-hours.test.js
+node tests/monthly-settlement-model.test.js
+node tests/monthly-settlement-backend.test.js
 ```
+
+## 학생별 월간 시간·금액
+
+관리자 `예산·시간`에서 월을 선택하면 학생별 근무표 시간과 기본 금액을 조회할 수 있습니다. 점심 제외·결근·확정 대타·추가근무 신청은 기존 예산 원장과 같은 기준이며 해당 월 전체 예정 근무를 포함합니다. 연도별 학기 설정 시급을 사용하고 지급 확정 기능은 포함하지 않습니다.
+
+현재 학기 관리자는 학생의 월 총시간을 보정하거나 근무표 기준으로 복원할 수 있습니다. 보정은 기존 시간을 대체하며 원본 근무표·기존 예산 예측을 바꾸지 않습니다. 사유·수정자 표시·시각·수정 전후 시간은 별도 이력에 남습니다. 공용 관리자 PIN은 개인을 식별하지 않으므로 수정자 표시는 직접 기입한 정보로 표시합니다. 과거 학기는 조회만 허용합니다.
+
+`monthly-hours.js`와 `backend/MonthlyHours.gs`는 동일한 계산 모델입니다. 변경 시 두 파일을 함께 갱신하고 테스트로 바이트 일치를 확인합니다. 백엔드 미설정 시 월간 기본 조회는 가능하며 보정 버튼은 나타나지 않습니다. 적용 절차는 backend/README.md의 월간 시간 보정 절을 참조하세요.

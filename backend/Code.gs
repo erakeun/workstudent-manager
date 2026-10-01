@@ -93,6 +93,7 @@ function route_(action,p){
     case "upsertStudent":return upsertStudent_(p);case "deleteStudent":return deleteStudent_(p);case "addSchedule":return addSchedule_(p);case "deleteSchedule":return deleteSchedule_(p);
     case "createExtraShift":return createExtraShift_(p);case "deleteExtraShift":return deleteExtraShift_(p);case "applyExtraShift":return applyExtraShift_(p);case "deleteExtraJoin":return deleteExtraJoin_(p);
     case "createPublicNotice":return createPublicNotice_(p);case "deletePublicNotice":return deletePublicNotice_(p);case "createNotice":return createNotice_(p);case "deleteNotice":return deleteNotice_(p);
+    case "saveMonthlyCorrection":return saveMonthlyCorrection_(p);
     case "saveSettings":return saveSettings_(p);case "saveBudget":return saveBudget_(p);case "upsertHoliday":return upsertHoliday_(p);case "deleteHoliday":return deleteHoliday_(p);case "upsertEvent":return upsertEvent_(p);case "deleteEvent":return deleteEvent_(p);
     default:throw new Error("지원하지 않는 action이야: "+action);
   }
@@ -116,7 +117,7 @@ function getPublicHome_(){
 }
 function getAdminDashboard_(p){
   authAdmin_(p.pin);const activeId=activeTermId_(),termId=validTermId_(p.termId||activeId);
-  const memos=sharedMemoPage_(termId,0,5);return{ok:true,students:rowsForTerm_(SHEETS.STUDENTS,termId),schedules:rowsForTerm_(SHEETS.SCHEDULES,termId),absences:rowsForTerm_(SHEETS.ABSENCES,termId),substitutes:rowsForTerm_(SHEETS.SUBS,termId),extraShifts:rowsForTerm_(SHEETS.EXTRA,termId),extraJoins:rowsForTerm_(SHEETS.EXTRA_JOINS,termId),notices:rowsForTerm_(SHEETS.NOTICES,termId),publicNotices:rowsForTerm_(SHEETS.PUBLIC_NOTICES,termId),holidays:rowsForTerm_(SHEETS.HOLIDAYS,termId),events:rowsForTerm_(SHEETS.EVENTS,termId),budgets:rowsForTerm_(SHEETS.BUDGETS,termId),sharedMemos:memos.sharedMemos,sharedMemoHasMore:memos.sharedMemoHasMore,features:{sharedMemos:true},settings:settingsObject_(termId),terms:termRows_().map(publicTerm_),activeTermId:activeId,selectedTermId:termId,readOnly:termId!==activeId,backendVersion:APP_VERSION_};
+  const memos=sharedMemoPage_(termId,0,5);return{ok:true,students:rowsForTerm_(SHEETS.STUDENTS,termId),schedules:rowsForTerm_(SHEETS.SCHEDULES,termId),absences:rowsForTerm_(SHEETS.ABSENCES,termId),substitutes:rowsForTerm_(SHEETS.SUBS,termId),extraShifts:rowsForTerm_(SHEETS.EXTRA,termId),extraJoins:rowsForTerm_(SHEETS.EXTRA_JOINS,termId),notices:rowsForTerm_(SHEETS.NOTICES,termId),publicNotices:rowsForTerm_(SHEETS.PUBLIC_NOTICES,termId),holidays:rowsForTerm_(SHEETS.HOLIDAYS,termId),events:rowsForTerm_(SHEETS.EVENTS,termId),budgets:rowsForTerm_(SHEETS.BUDGETS,termId),sharedMemos:memos.sharedMemos,sharedMemoHasMore:memos.sharedMemoHasMore,monthlyCorrections:monthlyCorrectionRows_(termId),features:{sharedMemos:true,monthlySettlement:monthlyCorrectionsAvailable_()},settings:settingsObject_(termId),terms:termRows_().map(publicTerm_),activeTermId:activeId,selectedTermId:termId,readOnly:termId!==activeId,backendVersion:APP_VERSION_};
 }
 function getStudentDashboard_(p){
   const s=authStudent_(p.studentId,p.loginPin||p.last4),termId=activeTermId_();
@@ -293,3 +294,34 @@ function sheetLiteral_(value){const text=String(value||"");return/^[=+\-@]/.test
 function memoNow_(){return Utilities.formatDate(new Date(),Session.getScriptTimeZone()||"Asia/Seoul","yyyy-MM-dd HH:mm:ss.SSS");}
 function id_(prefix){return prefix+"_"+Utilities.getUuid().slice(0,8);}function now_(){return Utilities.formatDate(new Date(),Session.getScriptTimeZone()||"Asia/Seoul","yyyy-MM-dd HH:mm:ss");}function isoToday_(){return Utilities.formatDate(new Date(),Session.getScriptTimeZone()||"Asia/Seoul","yyyy-MM-dd");}
 function clearPublicCache_(){try{CacheService.getScriptCache().remove("PUBLIC_HOME_V030");CacheService.getScriptCache().remove("PUBLIC_HOME_V027");}catch(e){}}
+
+// ---------- MONTHLY SETTLEMENT REFERENCE / APPEND-ONLY CORRECTIONS ----------
+const MONTHLY_CORRECTION_SHEET_="월별시간보정";
+const MONTHLY_CORRECTION_HEADERS_=["EVENT_ID","REQUEST_ID","TERM_ID","STUDENT_KEY","MONTH","MODE","BASE_MINUTES","BEFORE_MINUTES","AFTER_MINUTES","VERSION","REASON","ACTOR_ROLE","ACTOR_LABEL","MODIFIED_AT"];
+function setupMonthlyHours(){
+  if(typeof WorkMonthly==="undefined")throw new Error("MonthlyHours.gs 파일을 먼저 추가해줘.");
+  ensureSheet_(SpreadsheetApp.getActiveSpreadsheet(),MONTHLY_CORRECTION_SHEET_,MONTHLY_CORRECTION_HEADERS_);
+  clearRequestCache_(MONTHLY_CORRECTION_SHEET_);
+}
+function monthlyCorrectionsAvailable_(){
+  if(typeof WorkMonthly==="undefined")return false;
+  const sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MONTHLY_CORRECTION_SHEET_);if(!sh||sh.getLastColumn()<1)return false;
+  const headers=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0];return MONTHLY_CORRECTION_HEADERS_.every(h=>headers.includes(h));
+}
+function monthlyCorrectionRows_(termId){return monthlyCorrectionsAvailable_()?rowsForTerm_(MONTHLY_CORRECTION_SHEET_,termId):[];}
+function saveMonthlyCorrection_(p){
+  const termId=writeTermId_(p);if(!monthlyCorrectionsAvailable_())throw new Error("월별시간보정 구성이 필요해. 관리자에게 문의해줘.");
+  const lock=LockService.getScriptLock();lock.waitLock(30000);
+  try{
+    REQUEST_ROWS_CACHE_={};
+    const old=monthlyCorrectionRows_(termId).find(x=>x.REQUEST_ID===p.requestId);
+    if(old){
+      if(old.STUDENT_KEY!==p.studentKey||old.MONTH!==p.month||old.MODE!==p.mode||(old.REASON!==String(p.reason||"").trim()&&old.REASON!==sheetLiteral_(String(p.reason||"").trim()))||(old.ACTOR_LABEL!==String(p.actorLabel||"").trim()&&old.ACTOR_LABEL!==sheetLiteral_(String(p.actorLabel||"").trim()))||(p.mode!=="BASE"&&Number(old.AFTER_MINUTES)!==Number(p.minutes)))throw new Error("같은 요청 식별자가 다른 보정에 사용됐어.");
+      return{ok:true,event:old,replayed:true};
+    }
+    const d=getAdminDashboard_({pin:p.pin,termId:termId});
+    const event=WorkMonthly.correctionEvent(d,p,{eventId:"MC_"+Utilities.getUuid(),timestamp:new Date().toISOString()});
+    event.REASON=sheetLiteral_(event.REASON);event.ACTOR_LABEL=sheetLiteral_(event.ACTOR_LABEL);
+    appendObject_(MONTHLY_CORRECTION_SHEET_,event);return{ok:true,event:event};
+  }finally{lock.releaseLock();}
+}

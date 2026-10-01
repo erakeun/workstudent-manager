@@ -13,3 +13,22 @@
 마이그레이션은 기존 행을 삭제하거나 이동하지 않습니다. 빈 `TERM_ID` 셀에만 `2026-2`를 채우며 여러 번 실행해도 중복 학기나 중복 데이터가 생기지 않습니다. `seedSampleData()` 같은 샘플 입력 함수는 포함하지 않았습니다.
 
 프런트엔드는 백엔드 응답의 기능 플래그를 확인하므로 새 Apps Script를 재배포하기 전에는 공유 메모 카드가 노출되지 않습니다. 따라서 기존 운영 기능은 유지되지만 공유 메모 사용을 시작하려면 위 2~6단계를 완료해야 합니다.
+
+## 월간 시간·금액 및 관리자 시간 보정 적용 (승인 후 실행)
+
+2026-10-01 사용자 운영 배포 승인 후 기존 서비스 주소의 Apps Script 버전 12로 적용했습니다. 아래 절차는 후속 업데이트 시에도 대상 프로젝트와 기존 배포를 확인하고 진행합니다.
+
+1. 운영 Apps Script의 기존 Code.gs와 배포 버전을 백업합니다. 저장소에는 실제 script project ID가 없어 웹앱 배포 ID만으로 프로젝트를 확정할 수 없습니다.
+2. `backend/Code.gs`를 적용하고 새 Apps Script 파일 `MonthlyHours.gs`를 만들어 `backend/MonthlyHours.gs` 내용을 추가합니다. 이 두 파일을 함께 적용해야 합니다.
+3. `setupMonthlyHours()`를 한 번 실행합니다. 이 함수는 `월별시간보정` 탭과 필요한 헤더만 생성/추가하며 기존 학기 데이터 전체 마이그레이션이나 샘플 입력을 하지 않습니다. 재실행해도 보정 행은 추가하지 않습니다.
+4. 기존 웹앱 URL을 유지한 채 새 Apps Script 버전으로 재배포합니다.
+5. GitHub Pages에 index.html, app.js, monthly-hours.js를 함께 반영합니다. config.js의 API_URL과 DEMO_MODE=false는 그대로 둡니다.
+6. 관리자 화면에서 월간 기본 금액·분 단위 보정·저장 후 재조회·이력·근무표 기준 복원을 검증합니다. 운영 검증 데이터 입력은 별도 승인을 받고 수행합니다.
+
+백엔드는 관리자 대시보드에 `features.monthlySettlement`를 제공하며, 공유 계산 모델과 보정 탭 헤더가 준비된 경우에만 보정 UI가 활성화됩니다. 기본 조회는 기존 백엔드에서도 동작합니다. 시간 보정은 서버에서 관리자 PIN·활성학기·학생·월·최신 버전과 근무표 기준시간을 재검증하며 ScriptLock 안에서 append-only로 저장합니다. 동일 REQUEST_ID는 재전송 시 중복 행을 만들지 않습니다.
+
+헤더: EVENT_ID, REQUEST_ID, TERM_ID, STUDENT_KEY, MONTH, MODE, BASE_MINUTES, BEFORE_MINUTES, AFTER_MINUTES, VERSION, REASON, ACTOR_ROLE, ACTOR_LABEL, MODIFIED_AT.
+
+MODE=OVERRIDE는 학생·월 총시간 대체, MODE=BASE는 현재 근무표 기준으로 복원을 뜻합니다. 지급 완료 상태나 직접 입력 금액은 저장하지 않습니다. 금액은 현재 학기 설정의 해당 연도 시급으로 계산합니다. 수정 시각은 서버 UTC ISO로 저장하고 UI에서 한국시간으로 표시합니다. 수정자 표시는 직접 입력한 정보이고, 인증된 역할은 ADMIN입니다.
+
+롤백 시 이전 Apps Script 배포 버전과 이전 Pages의 index.html/app.js를 복원합니다. 이전 버전에는 보정 기능 플래그가 없어 버튼이 나타나지 않습니다. 월별시간보정 탭과 이력 행은 보존하며 기존 근무표를 되돌릴 필요는 없습니다. 보정 자체를 취소하려면 삭제 대신 UI의 근무표 기준 복원으로 새 이력을 남깁니다. 월별 보정 기능만 비활성화하려면 backend의 monthlyCorrectionsAvailable_ 반환을 false로 바꾸는 별도 버전으로 배포하는 방법도 있습니다.
