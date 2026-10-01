@@ -44,7 +44,7 @@ var WorkMonthly = (() => {
   function baseMinutes(d,month){
     if(!validMonth(month))throw new Error("조회 월을 확인해줘.");
     const [y,m]=month.split("-").map(Number),last=new Date(y,m,0).getDate(),totals={};
-    const invalid=new Set(),validTime=t=>/^([01]\d|2[0-3]):[0-5]\d$/.test(String(t||"")),validInterval=x=>validTime(x.START)&&validTime(x.END)&&timeMin(x.START)<timeMin(x.END);
+    const invalid=new Set(),validTime=t=>/^([01]?\d|2[0-3]):[0-5]\d$/.test(String(t||"")),validInterval=x=>validTime(x.START)&&validTime(x.END)&&timeMin(x.START)<timeMin(x.END);
     const duplicateKeys=(items,id)=>{const seen=new Map();items.forEach(x=>{if(!x[id])return;const previous=seen.get(x[id]);if(previous){invalid.add(previous.STUDENT_KEY);invalid.add(x.STUDENT_KEY);if(previous.SUBSTITUTE_KEY)invalid.add(previous.SUBSTITUTE_KEY);if(x.SUBSTITUTE_KEY)invalid.add(x.SUBSTITUTE_KEY);}else seen.set(x[id],x);});};
     duplicateKeys((d.schedules||[]).filter(x=>x.ACTIVE==="Y"),"SCHEDULE_ID");
     duplicateKeys((d.absences||[]).filter(x=>!['취소','삭제'].includes(x.STATUS)&&String(x.DATE||"").slice(0,7)===month),"ABSENCE_ID");
@@ -64,10 +64,11 @@ var WorkMonthly = (() => {
     return (d.students||[]).map(student=>{
       const correction=latest(d.monthlyCorrections,student.STUDENT_KEY,month,termId),minutes=Object.prototype.hasOwnProperty.call(base,student.STUDENT_KEY)?base[student.STUDENT_KEY]:0;
       const applied=correction&&correction.MODE!=="BASE"?Number(correction.AFTER_MINUTES):minutes;
-      const invalid=correction&&(!["OVERRIDE","BASE"].includes(correction.MODE)||!/^\d+$/.test(String(correction.AFTER_MINUTES))||!Number.isSafeInteger(Number(correction.AFTER_MINUTES))||Number(correction.AFTER_MINUTES)<0||!/^\d+$/.test(String(correction.BASE_MINUTES))||!/^\d+$/.test(String(correction.VERSION))||Number(correction.VERSION)<1);
-      const needsReview=!!(minutes===null||invalid||correction&&correction.MODE!=="BASE"&&Number(correction.BASE_MINUTES)!==minutes);
+      const invalid=correction&&(!["OVERRIDE","BASE"].includes(correction.MODE)||!(correction.MODE==="BASE"&&correction.AFTER_MINUTES===""||/^\d+$/.test(String(correction.AFTER_MINUTES)))||!Number.isSafeInteger(Number(correction.AFTER_MINUTES))||Number(correction.AFTER_MINUTES)<0||!(correction.BASE_MINUTES===""||/^\d+$/.test(String(correction.BASE_MINUTES)))||!/^\d+$/.test(String(correction.VERSION))||Number(correction.VERSION)<1);
+      const amountDirect=correction?.AMOUNT_MODE==="DIRECT",amountInvalid=amountDirect&&(!/^\d+$/.test(String(correction.AFTER_AMOUNT))||!Number.isSafeInteger(Number(correction.AFTER_AMOUNT))),calculatedAmount=wage===null||invalid||applied===null?null:applied/60*wage;
+      const needsReview=!!(minutes===null||invalid||amountInvalid||correction&&correction.MODE!=="BASE"&&Number(correction.BASE_MINUTES)!==minutes);
       return {student,baseMinutes:minutes,appliedMinutes:invalid?null:applied,correction,wage,needsReview,
-        baseAmount:wage===null||minutes===null?null:minutes/60*wage,settlementAmount:wage===null||invalid||minutes===null?null:applied/60*wage,
+        baseAmount:wage===null||minutes===null?null:minutes/60*wage,calculatedAmount,amountDirect,settlementAmount:amountInvalid?null:amountDirect?Number(correction.AFTER_AMOUNT):calculatedAmount,
         version:correction?Number(correction.VERSION):0,paymentConfirmed:false};
     });
   }
@@ -77,19 +78,23 @@ var WorkMonthly = (() => {
     const term=(d.terms||[]).find(x=>x.TERM_ID===d.selectedTermId);
     if(term&&((term.START_DATE&&month<term.START_DATE.slice(0,7))||(term.END_DATE&&month>term.END_DATE.slice(0,7))))throw new Error("선택 학기 밖의 월은 보정할 수 없어.");
     const row=summarize(d,month).find(x=>x.student.STUDENT_KEY===p.studentKey);if(!row)throw new Error("학생을 찾을 수 없어.");
-    if(row.baseMinutes===null)throw new Error("근무표 원본 시간에 오류가 있어. 원본을 확인해줘.");
     const reason=String(p.reason||"").trim(),label=String(p.actorLabel||"").trim();
     if(!reason||reason.length>500)throw new Error("보정 사유는 1~500자로 입력해줘.");
     if(!label||label.length>80)throw new Error("수정자 표시는 1~80자로 입력해줘.");
     if(!/^[A-Za-z0-9_-]{8,100}$/.test(String(p.requestId||"")))throw new Error("요청 식별자를 확인해줘.");
-    if(!/^\d+$/.test(String(p.expectedVersion))||Number(p.expectedVersion)!==row.version||Number(p.expectedBaseMinutes)!==row.baseMinutes)throw new Error("근무표 또는 보정 이력이 변경됐어. 새로고침 후 다시 확인해줘.");
+    if(!/^\d+$/.test(String(p.expectedVersion))||Number(p.expectedVersion)!==row.version||(p.expectedBaseMinutes===null||p.expectedBaseMinutes===""?null:Number(p.expectedBaseMinutes))!==row.baseMinutes)throw new Error("근무표 또는 보정 이력이 변경됐어. 새로고침 후 다시 확인해줘.");
     if(!["OVERRIDE","BASE"].includes(p.mode))throw new Error("보정 방식을 확인해줘.");
     const minutes=p.mode==="BASE"?row.baseMinutes:Number(p.minutes);
     if(p.mode!=="BASE"&&(!/^\d+$/.test(String(p.minutes))||!Number.isSafeInteger(minutes)||minutes<0||minutes>new Date(Number(month.slice(0,4)),Number(month.slice(5)),0).getDate()*1440))throw new Error("월 총시간은 해당 월의 총 분 이내 정수로 입력해줘.");
+    const amountMode=p.amountMode||"KEEP";if(!["KEEP","DIRECT","AUTO"].includes(amountMode))throw new Error("금액 방식을 확인해줘.");
+    if(amountMode==="DIRECT"&&(!/^\d+$/.test(String(p.amount))||!Number.isSafeInteger(Number(p.amount))))throw new Error("최종 금액은 0 이상의 원 단위 정수로 입력해줘.");
+    const direct=p.mode!=="BASE"&&(amountMode==="DIRECT"||amountMode==="KEEP"&&row.amountDirect),amount=direct?(amountMode==="DIRECT"?Number(p.amount):row.settlementAmount):row.wage===null||minutes===null?"":Math.round(minutes/60*row.wage);
     return {EVENT_ID:meta.eventId,REQUEST_ID:p.requestId,TERM_ID:d.selectedTermId,STUDENT_KEY:p.studentKey,MONTH:month,
-      MODE:p.mode,BASE_MINUTES:row.baseMinutes,BEFORE_MINUTES:row.appliedMinutes===null?"확인 필요":row.appliedMinutes,AFTER_MINUTES:minutes,
+      MODE:p.mode,BASE_MINUTES:row.baseMinutes===null?"":row.baseMinutes,BEFORE_MINUTES:row.appliedMinutes===null?"확인 필요":row.appliedMinutes,AFTER_MINUTES:minutes===null?"":minutes,
+      REQUEST_AMOUNT_MODE:amountMode,AMOUNT_MODE:direct?"DIRECT":"AUTO",AFTER_AMOUNT:amount,BEFORE_AMOUNT:row.settlementAmount===null?"":row.settlementAmount,
       VERSION:row.version+1,REASON:reason,ACTOR_ROLE:"ADMIN",ACTOR_LABEL:label,MODIFIED_AT:meta.timestamp};
   }
-  return {validMonth,baseMinutes,rate,latest,summarize,correctionEvent};
+  function replayMatches(old,p){return (!old.REQUEST_AMOUNT_MODE||old.REQUEST_AMOUNT_MODE===(p.amountMode||"KEEP"))&&old.STUDENT_KEY===p.studentKey&&old.MONTH===p.month&&old.MODE===p.mode&&(p.mode==="BASE"||Number(old.AFTER_MINUTES)===Number(p.minutes))&&(p.amountMode!=="DIRECT"||old.AMOUNT_MODE==="DIRECT"&&String(old.AFTER_AMOUNT)===String(p.amount))&&(p.amountMode!=="AUTO"||old.AMOUNT_MODE==="AUTO");}
+  return {replayMatches,validMonth,baseMinutes,rate,latest,summarize,correctionEvent};
 })();
 if(typeof module!=="undefined"&&module.exports)module.exports=WorkMonthly;

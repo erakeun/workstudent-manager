@@ -22,11 +22,18 @@ c.upsertTermSetting_('2026-2','WAGE_2026','10320');corrected=c.WorkMonthly.summa
 c.saveMonthlyCorrection_({...p,minutes:0,expectedVersion:1,requestId:'REQUEST_ZERO'});assert.equal(c.WorkMonthly.summarize(c.getAdminDashboard_({pin:'1234'}),'2026-09')[0].settlementAmount,0);
 c.saveMonthlyCorrection_({...p,mode:'BASE',expectedVersion:2,requestId:'REQUEST_RESET',reason:'원본 기준 복원'});assert.equal(c.WorkMonthly.summarize(c.getAdminDashboard_({pin:'1234'}),'2026-09')[0].appliedMinutes,540);assert.equal(rows(book,'월별시간보정').length,3);
 assert.equal(JSON.stringify(['학생DB','고정근무표','출근불가','예산'].map(n=>rows(book,n))),baseSheets);
+const direct=c.saveMonthlyCorrection_({...p,expectedVersion:3,requestId:'REQUEST_AMOUNT',amountMode:'DIRECT',amount:'0'}).event;
+assert.equal(direct.AFTER_AMOUNT,0);assert.equal(c.saveMonthlyCorrection_({...p,expectedVersion:3,requestId:'REQUEST_AMOUNT',amountMode:'DIRECT',amount:'0'}).replayed,true);
+assert.throws(()=>c.saveMonthlyCorrection_({...p,requestId:'REQUEST_AMOUNT',amountMode:'DIRECT',amount:'1'}),/식별자/);
+c.saveMonthlyCorrection_({...p,minutes:300,expectedVersion:4,requestId:'REQUEST_KEEP',amountMode:'KEEP'});
+assert.equal(c.WorkMonthly.summarize(c.getAdminDashboard_({pin:'1234'}),'2026-09')[0].settlementAmount,0);
+assert.equal(rows(book,'월별시간보정')[4].BEFORE_AMOUNT,'0');
+assert.equal(JSON.stringify(['학생DB','고정근무표','출근불가','예산'].map(n=>rows(book,n))),baseSheets);
 // A new term must not inherit prior term corrections, and prior term remains read-only.
 c.createTerm_({pin:'1234',year:'2027',termType:'1',termName:'2027-1학기',startDate:'2027-03-01',endDate:'2027-08-31',copyStudents:'Y',copySchedules:'Y'});
 c.activateTerm_({pin:'1234',activateTermId:'2027-1'});
 assert.throws(()=>c.saveMonthlyCorrection_({...p,expectedVersion:3,requestId:'REQUEST_PAST'}),/읽기 전용/);
 assert.equal(c.getAdminDashboard_({pin:'1234',termId:'2027-1'}).monthlyCorrections.length,0);
-assert.equal(c.getAdminDashboard_({pin:'1234',termId:'2026-2'}).monthlyCorrections.length,3);
+assert.equal(c.getAdminDashboard_({pin:'1234',termId:'2026-2'}).monthlyCorrections.length,5);
 const student=c.getStudentDashboard_({studentId:'20260001',loginPin:'1111'});assert.equal(student.monthlyCorrections,undefined);assert.equal(student.features.monthlySettlement,undefined);
 console.log('monthly-settlement-backend: schema setup, auth, server baseline, audit, replay, conflict, zero/reset, amounts, term isolation, student exclusion and original preservation passed');

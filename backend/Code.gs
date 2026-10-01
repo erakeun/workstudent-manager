@@ -117,7 +117,7 @@ function getPublicHome_(){
 }
 function getAdminDashboard_(p){
   authAdmin_(p.pin);const activeId=activeTermId_(),termId=validTermId_(p.termId||activeId);
-  const memos=sharedMemoPage_(termId,0,5);return{ok:true,students:rowsForTerm_(SHEETS.STUDENTS,termId),schedules:rowsForTerm_(SHEETS.SCHEDULES,termId),absences:rowsForTerm_(SHEETS.ABSENCES,termId),substitutes:rowsForTerm_(SHEETS.SUBS,termId),extraShifts:rowsForTerm_(SHEETS.EXTRA,termId),extraJoins:rowsForTerm_(SHEETS.EXTRA_JOINS,termId),notices:rowsForTerm_(SHEETS.NOTICES,termId),publicNotices:rowsForTerm_(SHEETS.PUBLIC_NOTICES,termId),holidays:rowsForTerm_(SHEETS.HOLIDAYS,termId),events:rowsForTerm_(SHEETS.EVENTS,termId),budgets:rowsForTerm_(SHEETS.BUDGETS,termId),sharedMemos:memos.sharedMemos,sharedMemoHasMore:memos.sharedMemoHasMore,monthlyCorrections:monthlyCorrectionRows_(termId),features:{sharedMemos:true,monthlySettlement:monthlyCorrectionsAvailable_()},settings:settingsObject_(termId),terms:termRows_().map(publicTerm_),activeTermId:activeId,selectedTermId:termId,readOnly:termId!==activeId,backendVersion:APP_VERSION_};
+  const memos=sharedMemoPage_(termId,0,5);return{ok:true,students:rowsForTerm_(SHEETS.STUDENTS,termId),schedules:rowsForTerm_(SHEETS.SCHEDULES,termId),absences:rowsForTerm_(SHEETS.ABSENCES,termId),substitutes:rowsForTerm_(SHEETS.SUBS,termId),extraShifts:rowsForTerm_(SHEETS.EXTRA,termId),extraJoins:rowsForTerm_(SHEETS.EXTRA_JOINS,termId),notices:rowsForTerm_(SHEETS.NOTICES,termId),publicNotices:rowsForTerm_(SHEETS.PUBLIC_NOTICES,termId),holidays:rowsForTerm_(SHEETS.HOLIDAYS,termId),events:rowsForTerm_(SHEETS.EVENTS,termId),budgets:rowsForTerm_(SHEETS.BUDGETS,termId),sharedMemos:memos.sharedMemos,sharedMemoHasMore:memos.sharedMemoHasMore,monthlyCorrections:monthlyCorrectionRows_(termId),features:{sharedMemos:true,monthlySettlement:monthlyCorrectionsAvailable_(),monthlyFinalAmount:monthlyAmountsAvailable_()},settings:settingsObject_(termId),terms:termRows_().map(publicTerm_),activeTermId:activeId,selectedTermId:termId,readOnly:termId!==activeId,backendVersion:APP_VERSION_};
 }
 function getStudentDashboard_(p){
   const s=authStudent_(p.studentId,p.loginPin||p.last4),termId=activeTermId_();
@@ -297,7 +297,7 @@ function clearPublicCache_(){try{CacheService.getScriptCache().remove("PUBLIC_HO
 
 // ---------- MONTHLY SETTLEMENT REFERENCE / APPEND-ONLY CORRECTIONS ----------
 const MONTHLY_CORRECTION_SHEET_="월별시간보정";
-const MONTHLY_CORRECTION_HEADERS_=["EVENT_ID","REQUEST_ID","TERM_ID","STUDENT_KEY","MONTH","MODE","BASE_MINUTES","BEFORE_MINUTES","AFTER_MINUTES","VERSION","REASON","ACTOR_ROLE","ACTOR_LABEL","MODIFIED_AT"];
+const MONTHLY_CORRECTION_HEADERS_=["EVENT_ID","REQUEST_ID","TERM_ID","STUDENT_KEY","MONTH","MODE","BASE_MINUTES","BEFORE_MINUTES","AFTER_MINUTES","VERSION","REASON","ACTOR_ROLE","ACTOR_LABEL","MODIFIED_AT","AMOUNT_MODE","BEFORE_AMOUNT","AFTER_AMOUNT","REQUEST_AMOUNT_MODE"];
 function setupMonthlyHours(){
   if(typeof WorkMonthly==="undefined")throw new Error("MonthlyHours.gs 파일을 먼저 추가해줘.");
   ensureSheet_(SpreadsheetApp.getActiveSpreadsheet(),MONTHLY_CORRECTION_SHEET_,MONTHLY_CORRECTION_HEADERS_);
@@ -306,17 +306,19 @@ function setupMonthlyHours(){
 function monthlyCorrectionsAvailable_(){
   if(typeof WorkMonthly==="undefined")return false;
   const sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MONTHLY_CORRECTION_SHEET_);if(!sh||sh.getLastColumn()<1)return false;
-  const headers=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0];return MONTHLY_CORRECTION_HEADERS_.every(h=>headers.includes(h));
+  const headers=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0];return MONTHLY_CORRECTION_HEADERS_.slice(0,14).every(h=>headers.includes(h));
 }
+function monthlyAmountsAvailable_(){if(!monthlyCorrectionsAvailable_())return false;const sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MONTHLY_CORRECTION_SHEET_);return ["AMOUNT_MODE","BEFORE_AMOUNT","AFTER_AMOUNT","REQUEST_AMOUNT_MODE"].every(h=>sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0].includes(h));}
 function monthlyCorrectionRows_(termId){return monthlyCorrectionsAvailable_()?rowsForTerm_(MONTHLY_CORRECTION_SHEET_,termId):[];}
 function saveMonthlyCorrection_(p){
   const termId=writeTermId_(p);if(!monthlyCorrectionsAvailable_())throw new Error("월별시간보정 구성이 필요해. 관리자에게 문의해줘.");
+  if(p.amountMode&&!monthlyAmountsAvailable_())throw new Error("최종 금액 보정 구성이 필요해.");
   const lock=LockService.getScriptLock();lock.waitLock(30000);
   try{
     REQUEST_ROWS_CACHE_={};
     const old=monthlyCorrectionRows_(termId).find(x=>x.REQUEST_ID===p.requestId);
     if(old){
-      if(old.STUDENT_KEY!==p.studentKey||old.MONTH!==p.month||old.MODE!==p.mode||(old.REASON!==String(p.reason||"").trim()&&old.REASON!==sheetLiteral_(String(p.reason||"").trim()))||(old.ACTOR_LABEL!==String(p.actorLabel||"").trim()&&old.ACTOR_LABEL!==sheetLiteral_(String(p.actorLabel||"").trim()))||(p.mode!=="BASE"&&Number(old.AFTER_MINUTES)!==Number(p.minutes)))throw new Error("같은 요청 식별자가 다른 보정에 사용됐어.");
+      if(!WorkMonthly.replayMatches(old,p)||(old.REASON!==String(p.reason||"").trim()&&old.REASON!==sheetLiteral_(String(p.reason||"").trim()))||(old.ACTOR_LABEL!==String(p.actorLabel||"").trim()&&old.ACTOR_LABEL!==sheetLiteral_(String(p.actorLabel||"").trim()))||(p.mode!=="BASE"&&Number(old.AFTER_MINUTES)!==Number(p.minutes)))throw new Error("같은 요청 식별자가 다른 보정에 사용됐어.");
       return{ok:true,event:old,replayed:true};
     }
     const d=getAdminDashboard_({pin:p.pin,termId:termId});

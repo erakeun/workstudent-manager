@@ -11,7 +11,7 @@ const reset=model.correctionEvent(d,{...p,mode:'BASE',expectedVersion:1,expected
 d.holidays=[];assert.equal(model.summarize(d,'2026-09')[0].appliedMinutes,720);assert.equal(model.summarize(d,'2026-09')[0].needsReview,false);
 d.extraShifts=[{SHIFT_ID:'EDGE',DATE:'2027-02-28',START:'09:00',END:'10:00',STATUS:'모집중'}];d.extraJoins=[{SHIFT_ID:'EDGE',STUDENT_KEY:'B',STATUS:'신청'}];d.settings.BREAK_END='2027-02-27';assert.equal(model.summarize(d,'2027-02')[1].baseMinutes,0);d.extraShifts=[];d.extraJoins=[];d.settings.BREAK_END='2027-02-28';
 assert.equal(model.rate(d,'2027-01'),10700);assert.equal(model.summarize(d,'2027-01')[0].baseMinutes,0);
-d.schedules[0].START='bad';r=model.summarize(d,'2026-09')[0];assert.equal(r.baseMinutes,null);assert.equal(r.settlementAmount,null);assert.equal(r.needsReview,true);assert.throws(()=>model.correctionEvent(d,{...p,expectedVersion:2,expectedBaseMinutes:0},{eventId:'E3',timestamp:'now'}),/원본/);
+d.schedules[0].START='bad';r=model.summarize(d,'2026-09')[0];assert.equal(r.baseMinutes,null);assert.equal(r.settlementAmount,null);assert.equal(r.needsReview,true);assert.throws(()=>model.correctionEvent(d,{...p,expectedVersion:2,expectedBaseMinutes:0},{eventId:'E3',timestamp:'now'}),/변경/);
 d.schedules[0].START='09:00';d.schedules[0].END='09:01';assert.equal(model.summarize(d,'2026-09')[0].baseMinutes,4);
 d.schedules[0].SCHEDULE_ID='S1';d.schedules.push({...d.schedules[0]});assert.equal(model.summarize(d,'2026-09')[0].baseMinutes,null);d.schedules.pop();
 d.extraShifts=[{SHIFT_ID:'X1',DATE:'2026-09-01',START:'09:00',END:'10:00',STATUS:'모집중'}];d.extraJoins=[{SHIFT_ID:'X1',STUDENT_KEY:'A',STATUS:'신청'},{SHIFT_ID:'X1',STUDENT_KEY:'A',STATUS:'신청'}];assert.equal(model.summarize(d,'2026-09')[0].baseMinutes,null);
