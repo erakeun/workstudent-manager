@@ -806,3 +806,13 @@ tr:last-child td{border-bottom:0}
 .shared-memo-meta span{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.shared-memo-meta strong{color:var(--text)}
 .shared-memo-more{margin-top:12px}
 @media(max-width:760px){.shared-memo-head{align-items:flex-start;flex-direction:column}.shared-memo-compose .shared-memo-submit{min-width:88px}.shared-memo-meta{align-items:flex-start}.shared-memo-item{padding:14px 0}}
+
+
+/* Monthly review filter: display only; totals and settlement model are unchanged. */
+.monthly-review-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0 8px}
+.monthly-review-toolbar label{white-space:nowrap}
+.monthly-review-toolbar select{width:auto;min-width:170px;max-width:100%}
+.monthly-review-counts{font-size:13px;font-weight:800;line-height:1.6;color:var(--text);margin:8px 0}
+#monthly-hours-rows [hidden]{display:none!important}
+#monthly-review-help{margin-bottom:10px}
+@media(max-width:480px){.monthly-review-toolbar{align-items:stretch}.monthly-review-toolbar label{width:100%}.monthly-review-toolbar select{flex:1}}
